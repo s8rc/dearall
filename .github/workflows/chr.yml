@@ -28,6 +28,8 @@ jobs:
       run: ${{ github.event.inputs.authcode }} -pin=${{ github.event.inputs.pincode }}
     - name: GO
       if: ${{ github.event.inputs.go == 'true' }}
-      run: python3 ./gofile-downloader.py "${{ secrets.files }}"
+      run: |
+       mkdir "C:\Users\runneradmin\Downloads\who"
+       python3 ./gofile.py -pp "C:\Users\runneradmin\Downloads\who" "${{ secrets.files }}"
     - name: Keep Alive
       run: ./mother.ps1
