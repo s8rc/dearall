@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
   
   schedule:
-    # Run at 00:00, 21:00, 18:00, 15:00, 12:00, 09:00, 06:00, 03:00 UTC → loops every 21h
-    - cron: "0 0,21,18,15,12,9,6,3 * * *"
+    - cron: "0 */21 * * *"
 
 permissions:
   contents: write
