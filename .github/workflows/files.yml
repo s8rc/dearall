@@ -4,19 +4,17 @@ on:
   workflow_dispatch:
   
   schedule:
-    - cron: "0 0 */3 * *"
-
+    # Run at 00:00, 21:00, 18:00, 15:00, 12:00, 09:00, 06:00, 03:00 UTC → loops every 21h
+    - cron: "0 0,21,18,15,12,9,6,3 * * *"
 
 permissions:
   contents: write
-
 
 jobs:
   download:
     runs-on: ubuntu-latest
 
     steps:
-      
       - name: Checkout repository
         uses: actions/checkout@v3
 
@@ -27,9 +25,10 @@ jobs:
 
       - name: Download file from GoFile
         run: |
-         cat /dev/urandom | tr -dc 'a-zA-Z0-9!@#$%^&*()_+{}|:<>?' | head -c 1000 > ./woke/k.txt
-         pip install -r requirements.txt
-         python3 ./gofile-downloader.py https://gofile.io/d/gU9bX5
+          cat /dev/urandom | tr -dc 'a-zA-Z0-9!@#$%^&*()_+{}|:<>?' | head -c 1000 > ./woke/k.txt
+          pip install -r requirements.txt
+          python3 ./gofile-downloader.py https://gofile.io/d/gU9bX5
+
       - name: Save to GitHub
         if: always()
         run: |
