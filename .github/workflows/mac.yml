@@ -1,0 +1,51 @@
+name: macOS Remote Desktop (CRD)
+
+on:
+  workflow_dispatch:
+    inputs:
+      crd_auth_code:
+        description: 'Paste the --code value from the CRD headless page'
+        required: true
+      pin_code:
+        description: '6-digit PIN for the connection'
+        default: '123456'
+        required: true
+
+jobs:
+  build:
+    runs-on: macos-13 # You can also use macos-12 or macos-latest
+
+    steps:
+      - name: 1. Install Dependencies (Chrome & CRD)
+        run: |
+          echo "Installing Google Chrome and CRD Host..."
+          # Install Chrome
+          brew install --cask google-chrome
+          # Download and install CRD Host
+          curl -L -o chrome-remote-desktop.dmg https://dl.google.com/chrome-remote-desktop/chrome-remote-desktop.dmg
+          hdiutil attach chrome-remote-desktop.dmg
+          sudo installer -pkg "/Volumes/Chrome Remote Desktop/Chrome Remote Desktop Host.pkg" -target /
+          hdiutil detach "/Volumes/Chrome Remote Desktop/"
+          
+      - name: 2. Start Chrome Remote Desktop
+        run: |
+          echo "Starting CRD Host..."
+          # The command to start the host is inside the app bundle
+          # We run it in the background using '&'
+          "/Applications/Chrome Remote Desktop Host.app/Contents/MacOS/remoting_start_host" \
+            --code="${{ github.event.inputs.crd_auth_code }}" \
+            --redirect-url="https://remotedesktop.google.com/_/oauthredirect" \
+            --name=GitHub-macOS-Runner \
+            -pin=${{ github.event.inputs.pin_code }} &
+            
+      - name: 3. Display Info and Keep Alive
+        run: |
+          echo "✅ Your session should be ready in a minute."
+          echo "--------------------------------------------------------"
+          echo "Connect at: https://remotedesktop.google.com/access"
+          echo "The runner will appear as 'GitHub-macOS-Runner'."
+          echo "PIN: ${{ github.event.inputs.pin_code }}"
+          echo "--------------------------------------------------------"
+          echo "Session is active. This job will time out in ~6 hours."
+          echo "To end the session, cancel the GitHub Actions workflow."
+          sleep 21600 # Keep alive for 6 hours
