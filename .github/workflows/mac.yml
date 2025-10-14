@@ -22,36 +22,12 @@ jobs:
           brew install --cask google-chrome
           brew install --cask chrome-remote-desktop-host
       
-      - name: 2. Locate the CRD Executable
-        id: find_crd
+      - name: 2. Debug - Find Package Location
+        id: debug_path
         run: |
-          echo "Searching for remoting_start_host executable..."
-          # Find the path in the most likely location and export it
-          CRD_EXEC_PATH=$(find "/Users/runner/Applications" -name "remoting_start_host" 2>/dev/null)
-          echo "Found at: $CRD_EXEC_PATH"
-          echo "CRD_EXEC_PATH=$CRD_EXEC_PATH" >> $GITHUB_ENV
-            
-      - name: 3. Start Chrome Remote Desktop Host
-        run: |
-          echo "Starting CRD Host directly..."
-          # Use the path we found in the previous step
-          "${{ env.CRD_EXEC_PATH }}" \
-            --code="${{ github.event.inputs.crd_auth_code }}" \
-            --redirect-url="https://remotedesktop.google.com/_/oauthredirect" \
-            --name=GitHub-macOS-Runner \
-            -pin=${{ github.event.inputs.pin_code }} &
-            
-      - name: 4. Display Info and Keep Alive
-        run: |
-          # A short delay to ensure the service has time to register online
-          sleep 15
+          echo "--- Running brew info to see installation details ---"
+          brew info --cask chrome-remote-desktop-host
           
-          echo "✅ Your session should be ready!"
-          echo "--------------------------------------------------------"
-          echo "Connect at: https://remotedesktop.google.com/access"
-          echo "The runner will appear as 'GitHub-macOS-Runner'."
-          echo "PIN: ${{ github.event.inputs.pin_code }}"
-          echo "--------------------------------------------------------"
-          echo "Session is active. This job will time out in ~6 hours."
-          echo "To end the session, cancel the GitHub Actions workflow."
-          sleep 21600 # Keep alive for 6 hours
+          echo "--- Exploring the Caskroom directory ---"
+          # The standard location for Cask installations
+          CASK_DIR="/usr/local/Caskroom
