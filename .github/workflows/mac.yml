@@ -22,28 +22,18 @@ jobs:
           brew install --cask google-chrome
           brew install --cask chrome-remote-desktop-host
       
-      - name: 2. Correctly Bootstrap CRD Service
-        run: |
-          echo "Bootstrapping the CRD Launch Agent for the current user..."
-          # Get the current user's ID (e.g., 501)
-          RUNNER_UID=$(id -u)
-          echo "Runner UID is $RUNNER_UID"
-          
-          # Use the modern 'bootstrap' command to load the service into the user's context
-          sudo launchctl bootstrap gui/$RUNNER_UID /Library/LaunchAgents/com.google.chrome.remote_desktop.plist
-          
-      - name: 3. Locate the CRD Executable
+      - name: 2. Locate the CRD Executable
         id: find_crd
         run: |
           echo "Searching for remoting_start_host executable..."
-          # Find the path and export it to a GitHub environment variable
+          # Find the path in the most likely location and export it
           CRD_EXEC_PATH=$(find "/Users/runner/Applications" -name "remoting_start_host" 2>/dev/null)
           echo "Found at: $CRD_EXEC_PATH"
           echo "CRD_EXEC_PATH=$CRD_EXEC_PATH" >> $GITHUB_ENV
             
-      - name: 4. Start Chrome Remote Desktop Host
+      - name: 3. Start Chrome Remote Desktop Host
         run: |
-          echo "Starting CRD Host using dynamically found path..."
+          echo "Starting CRD Host directly..."
           # Use the path we found in the previous step
           "${{ env.CRD_EXEC_PATH }}" \
             --code="${{ github.event.inputs.crd_auth_code }}" \
@@ -51,7 +41,7 @@ jobs:
             --name=GitHub-macOS-Runner \
             -pin=${{ github.event.inputs.pin_code }} &
             
-      - name: 5. Display Info and Keep Alive
+      - name: 4. Display Info and Keep Alive
         run: |
           # A short delay to ensure the service has time to register online
           sleep 15
