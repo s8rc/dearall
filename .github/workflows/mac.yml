@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       crd_auth_code:
-        description: 'Paste the --code value from the CRD headless page'
+        description: 'Paste ONLY the auth code, not the full command'
         required: true
       pin_code:
         description: '6-digit PIN for the connection'
@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-13 # You can also use macos-12 or macos-latest
+    runs-on: macos-13
 
     steps:
       - name: 1. Install Dependencies (Chrome & CRD)
@@ -24,9 +24,9 @@ jobs:
           
       - name: 2. Start Chrome Remote Desktop
         run: |
-          echo "Starting CRD Host..."
-          # The command to start the host is now in the standard PATH after brew install
-          remoting_start_host \
+          echo "Starting CRD Host with full path..."
+          # Use the full path to the executable inside the app bundle
+          "/Applications/Chrome Remote Desktop Host.app/Contents/MacOS/remoting_start_host" \
             --code="${{ github.event.inputs.crd_auth_code }}" \
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" \
             --name=GitHub-macOS-Runner \
