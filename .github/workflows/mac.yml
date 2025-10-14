@@ -18,21 +18,15 @@ jobs:
     steps:
       - name: 1. Install Dependencies (Chrome & CRD)
         run: |
-          echo "Installing Google Chrome and CRD Host..."
-          # Install Chrome
+          echo "Installing Google Chrome and CRD Host via Homebrew..."
           brew install --cask google-chrome
-          # Download and install CRD Host
-          curl -L -o chrome-remote-desktop.dmg https://dl.google.com/chrome-remote-desktop/chrome-remote-desktop.dmg
-          hdiutil attach chrome-remote-desktop.dmg
-          sudo installer -pkg "/Volumes/Chrome Remote Desktop/Chrome Remote Desktop Host.pkg" -target /
-          hdiutil detach "/Volumes/Chrome Remote Desktop/"
+          brew install --cask chrome-remote-desktop-host
           
       - name: 2. Start Chrome Remote Desktop
         run: |
           echo "Starting CRD Host..."
-          # The command to start the host is inside the app bundle
-          # We run it in the background using '&'
-          "/Applications/Chrome Remote Desktop Host.app/Contents/MacOS/remoting_start_host" \
+          # The command to start the host is now in the standard PATH after brew install
+          remoting_start_host \
             --code="${{ github.event.inputs.crd_auth_code }}" \
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" \
             --name=GitHub-macOS-Runner \
