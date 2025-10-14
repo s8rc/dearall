@@ -42,4 +42,5 @@ jobs:
           echo "--------------------------------------------------------"
           echo "Session is active. This job will time out in ~6 hours."
           echo "To end the session, cancel the GitHub Actions workflow."
+          brew info --cask chrome-remote-desktop-host
           sleep 21600 # Keep alive for 6 hours
