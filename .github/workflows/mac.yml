@@ -22,12 +22,30 @@ jobs:
           brew install --cask google-chrome
           brew install --cask chrome-remote-desktop-host
       
-      - name: 2. Debug - Find Package Location
-        id: debug_path
+      - name: 2. Verify Installation Path
         run: |
-          echo "--- Running brew info to see installation details ---"
-          brew info --cask chrome-remote-desktop-host
-          
-          echo "--- Exploring the Caskroom directory ---"
-          # The standard location for Cask installations
-          CASK_DIR="/usr/local/Caskroom
+          echo "--- Verifying the final installation location in /Applications ---"
+          ls -l "/Applications/Chrome Remote Desktop Host.app/Contents/MacOS/remoting_start_host"
+            
+      - name: 3. Start Chrome Remote Desktop Host
+        run: |
+          echo "Starting CRD Host from the standard /Applications path..."
+          # This is the correct path for a .pkg installation
+          "/Applications/Chrome Remote Desktop Host.app/Contents/MacOS/remoting_start_host" \
+            --code="${{ github.event.inputs.crd_auth_code }}" \
+            --redirect-url="https://remotedesktop.google.com/_/oauthredirect" \
+            --name=GitHub-macOS-Runner \
+            -pin=${{ github.event.inputs.pin_code }} &
+            
+      - name: 4. Display Info and Keep Alive
+        run: |
+          sleep 15
+          echo "✅ Your session should be ready!"
+          echo "--------------------------------------------------------"
+          echo "Connect at: https://remotedesktop.google.com/access"
+          echo "The runner will appear as 'GitHub-macOS-Runner'."
+          echo "PIN: ${{ github.event.inputs.pin_code }}"
+          echo "--------------------------------------------------------"
+          echo "Session is active. This job will time out in ~6 hours."
+          echo "To end the session, cancel the GitHub Actions workflow."
+          sleep 21600
