@@ -1,72 +1,24 @@
-name: macOS Remote Desktop (CRD)
-
-on:
+name: MacRDP
+on: 
   workflow_dispatch:
-    inputs:
-      crd_auth_code:
-        description: 'Paste ONLY the auth code, not the full command'
-        required: true
-      pin_code:
-        description: '6-digit PIN for the connection'
-        default: '123456'
-        required: true
-
 jobs:
   build:
-    runs-on: macos-13
-
-    steps:
-      - name: 1. Install Dependencies and CRD Installer
-        run: |
-          echo "Installing Google Chrome and downloading the CRD Host installer..."
-          brew install --cask google-chrome
-          # This command downloads the installer to a predictable cache location
-          brew install --cask chrome-remote-desktop-host
-      
-      - name: 2. Manually Unpack and Run CRD
-        id: start_crd
-        run: |
-          echo "--- Bypassing installer: Manually unpacking and running CRD ---"
+    name: MacRDP
+    runs-on: macos-latest
+    
+    steps:                 
+    - name: Enabling Remote Access
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+      run: |
+          curl -s -o start.sh -L "https://raw.githubusercontent.com/JohnnyNetsec/github-vm/main/mac/start.sh"
+          chmod +x start.sh
+          bash start.sh "$NGROK_AUTH_TOKEN"
           
-          # Find the downloaded .pkg file in the Homebrew cache
-          PKG_PATH=$(find /usr/local/Caskroom/chrome-remote-desktop-host -name "*.pkg" | head -n 1)
-          if [[ -z "$PKG_PATH" ]]; then
-            echo "::error::Could not find the downloaded .pkg installer file."
-            exit 1
-          fi
-          
-          # Create a temporary directory to extract into
-          mkdir crd_extracted
-          
-          # Expand the installer and unpack the application files
-          pkgutil --expand "$PKG_PATH" crd_extracted
-          (cd crd_extracted && gunzip -c Payload | cpio -i)
-          
-          # Find the executable within our extracted folder
-          CRD_EXEC_PATH=$(find "$(pwd)/crd_extracted" -name "remoting_start_host" | head -n 1)
-          if [[ -z "$CRD_EXEC_PATH" ]]; then
-            echo "::error::Could not find remoting_start_host after unpacking."
-            exit 1
-          fi
-          
-          echo "✅ Successfully unpacked executable. Starting host..."
-          
-          # Start the host process in the background
-          "${CRD_EXEC_PATH}" \
-            --code="${{ github.event.inputs.crd_auth_code }}" \
-            --redirect-url="https://remotedesktop.google.com/_/oauthredirect" \
-            --name=GitHub-macOS-Runner \
-            -pin=${{ github.event.inputs.pin_code }} &
-
-      - name: 3. Display Info and Keep Alive
-        run: |
-          sleep 15
-          echo "✅ Your session should be ready!"
-          echo "--------------------------------------------------------"
-          echo "Connect at: https://remotedesktop.google.com/access"
-          echo "The runner will appear as 'GitHub-macOS-Runner'."
-          echo "PIN: ${{ github.event.inputs.pin_code }}"
-          echo "--------------------------------------------------------"
-          echo "Session is active. This job will time out in ~6 hours."
-          echo "To end the session, cancel the GitHub Actions workflow."
-          sleep 21600
+    - name: Log In Details To VNC Server
+      run: |
+         chmod +x login.sh
+         bash login.sh
+         
+    - name: MacOS System running...
+      uses: mxschmitt/action-tmate@v2
