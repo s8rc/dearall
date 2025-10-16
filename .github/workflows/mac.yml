@@ -49,7 +49,10 @@ jobs:
           fi
           echo "Found installer at: $PKG_PATH"
 
+          # Clean up any previous runs and create a fresh directory
+          rm -rf crd_extracted
           mkdir crd_extracted
+          
           pkgutil --expand "$PKG_PATH" crd_extracted
           (cd crd_extracted && gunzip -c Payload | cpio -i)
           
