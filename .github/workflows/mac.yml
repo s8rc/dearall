@@ -10,71 +10,55 @@ on:
         description: '6-digit PIN for the connection'
         default: '123456'
         required: true
-      user_password:
-        description: 'Set a password for the new remote desktop user'
-        default: 'PleaseChangeMe'
-        required: true
 
 jobs:
   build:
     runs-on: macos-13
 
     steps:
-      - name: 1. Install Dependencies
+      - name: 1. Install Dependencies and CRD Installer
         run: |
           echo "Installing Google Chrome and downloading the CRD Host installer..."
           brew install --cask google-chrome
+          # This command downloads the installer to a predictable cache location
           brew install --cask chrome-remote-desktop-host
       
-      - name: 2. Create a New User Account
+      - name: 2. Manually Unpack and Run CRD
+        id: start_crd
         run: |
-          echo "Creating a new user account for the RDP session..."
-          sudo dscl . -create /Users/rdpuser
-          sudo dscl . -create /Users/rdpuser UserShell /bin/bash
-          sudo dscl . -create /Users/rdpuser RealName "RDP User"
-          sudo dscl . -create /Users/rdpuser UniqueID "1001"
-          sudo dscl . -create /Users/rdpuser PrimaryGroupID 80
-          sudo dscl . -create /Users/rdpuser NFSHomeDirectory /Users/rdpuser
-          sudo dscl . -passwd /Users/rdpuser "${{ github.event.inputs.user_password }}"
-          sudo createhomedir -c -u rdpuser
-          sudo dscl . -append /Groups/admin GroupMembership rdpuser
+          echo "--- Bypassing installer: Manually unpacking and running CRD ---"
           
-      - name: 3. Manually Unpack and Configure CRD
-        id: unpack_crd
-        run: |
-          echo "--- Manually unpacking the .pkg file to bypass installer issues ---"
+          # Find the downloaded .pkg file in the Homebrew cache
           PKG_PATH=$(find /usr/local/Caskroom/chrome-remote-desktop-host -name "*.pkg" | head -n 1)
           if [[ -z "$PKG_PATH" ]]; then
-            echo "::error::Could not find the downloaded .pkg file." && exit 1
+            echo "::error::Could not find the downloaded .pkg installer file."
+            exit 1
           fi
-          echo "Found installer at: $PKG_PATH"
-
-          # Clean up any previous runs and create a fresh directory
-          rm -rf crd_extracted
+          
+          # Create a temporary directory to extract into
           mkdir crd_extracted
           
+          # Expand the installer and unpack the application files
           pkgutil --expand "$PKG_PATH" crd_extracted
           (cd crd_extracted && gunzip -c Payload | cpio -i)
           
+          # Find the executable within our extracted folder
           CRD_EXEC_PATH=$(find "$(pwd)/crd_extracted" -name "remoting_start_host" | head -n 1)
           if [[ -z "$CRD_EXEC_PATH" ]]; then
-            echo "::error::Could not find remoting_start_host after unpacking." && exit 1
+            echo "::error::Could not find remoting_start_host after unpacking."
+            exit 1
           fi
-
-          echo "✅ Successfully unpacked executable to: $CRD_EXEC_PATH"
-          echo "CRD_EXEC_PATH=$CRD_EXEC_PATH" >> $GITHUB_ENV
-
-      - name: 4. Start Chrome Remote Desktop Host
-        run: |
-          echo "Starting CRD Host as the new user..."
-          # Run the command as the newly created user
-          sudo -u rdpuser "${{ env.CRD_EXEC_PATH }}" \
+          
+          echo "✅ Successfully unpacked executable. Starting host..."
+          
+          # Start the host process in the background
+          "${CRD_EXEC_PATH}" \
             --code="${{ github.event.inputs.crd_auth_code }}" \
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" \
             --name=GitHub-macOS-Runner \
             -pin=${{ github.event.inputs.pin_code }} &
-            
-      - name: 5. Display Info and Keep Alive
+
+      - name: 3. Display Info and Keep Alive
         run: |
           sleep 15
           echo "✅ Your session should be ready!"
@@ -82,10 +66,6 @@ jobs:
           echo "Connect at: https://remotedesktop.google.com/access"
           echo "The runner will appear as 'GitHub-macOS-Runner'."
           echo "PIN: ${{ github.event.inputs.pin_code }}"
-          echo "---"
-          echo "If prompted for system credentials inside the session, use:"
-          echo "User: rdpuser"
-          echo "Password: ${{ github.event.inputs.user_password }}"
           echo "--------------------------------------------------------"
           echo "Session is active. This job will time out in ~6 hours."
           echo "To end the session, cancel the GitHub Actions workflow."
