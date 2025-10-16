@@ -16,22 +16,48 @@ jobs:
     runs-on: macos-13
 
     steps:
-      - name: 1. Install Dependencies
+      - name: 1. Download Dependencies
         run: |
-          echo "Installing Google Chrome and CRD Host via Homebrew..."
+          echo "Installing Google Chrome and downloading the CRD Host installer..."
           brew install --cask google-chrome
           brew install --cask chrome-remote-desktop-host
       
-      - name: 2. Verify Installation Path
+      - name: 2. Manually Unpack the CRD Installer
+        id: unpack_crd
         run: |
-          echo "--- Verifying the final installation location in /Applications ---"
-          ls -l "/Applications/Chrome Remote Desktop Host.app/Contents/MacOS/remoting_start_host"
-            
+          echo "--- Bypassing the failed installer by manually unpacking the .pkg file. ---"
+          # Find the downloaded .pkg file in the Homebrew cache
+          PKG_PATH=$(find /usr/local/Caskroom/chrome-remote-desktop-host -name "*.pkg" | head -n 1)
+          if [[ -z "$PKG_PATH" ]]; then
+            echo "::error::Could not find the downloaded .pkg file."
+            exit 1
+          fi
+          echo "Found installer package at: $PKG_PATH"
+
+          # Create a directory to extract into
+          mkdir crd_extracted
+          
+          # Use pkgutil to expand the installer's contents
+          pkgutil --expand "$PKG_PATH" crd_extracted
+          
+          # Unpack the actual application files from the Payload file
+          echo "Unpacking the application from the payload..."
+          (cd crd_extracted && gunzip -c Payload | cpio -i)
+          
+          # Find the executable within our newly extracted folder
+          CRD_EXEC_PATH=$(find "$(pwd)/crd_extracted" -name "remoting_start_host" | head -n 1)
+          if [[ -z "$CRD_EXEC_PATH" ]]; then
+            echo "::error::Could not find remoting_start_host after unpacking."
+            exit 1
+          fi
+          
+          echo "✅ Successfully unpacked executable to: $CRD_EXEC_PATH"
+          echo "CRD_EXEC_PATH=$CRD_EXEC_PATH" >> $GITHUB_ENV
+
       - name: 3. Start Chrome Remote Desktop Host
         run: |
-          echo "Starting CRD Host from the standard /Applications path..."
-          # This is the correct path for a .pkg installation
-          "/Applications/Chrome Remote Desktop Host.app/Contents/MacOS/remoting_start_host" \
+          echo "Starting CRD Host from manually unpacked location..."
+          "${{ env.CRD_EXEC_PATH }}" \
             --code="${{ github.event.inputs.crd_auth_code }}" \
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" \
             --name=GitHub-macOS-Runner \
