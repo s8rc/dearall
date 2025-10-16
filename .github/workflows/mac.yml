@@ -1,24 +1,29 @@
-name: MacRDP
-on: 
+name: MacCRD
+on:
   workflow_dispatch:
+    inputs:
+      authcode:
+        description: 'Enter CRD Auth Code'
+        required: true
+      pincode:
+        description: 'Six digit Pin'
+        default: '123456'
+        required: true
 jobs:
   build:
-    name: MacRDP
+    name: MacCRD
     runs-on: macos-latest
-    
-    steps:                 
-    - name: Enabling Remote Access
-      env:
-        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+    steps:
+    - name: Setup Chrome Remote Desktop
       run: |
-          curl -s -o start.sh -L "https://raw.githubusercontent.com/JohnnyNetsec/github-vm/main/mac/start.sh"
-          chmod +x start.sh
-          bash start.sh "$NGROK_AUTH_TOKEN"
-          
-    - name: Log In Details To VNC Server
+        curl -o chrome-remote-desktop.dmg https://dl.google.com/chrome-remote-desktop/chromeremotedesktophost.dmg
+        hdiutil attach chrome-remote-desktop.dmg
+        sudo installer -pkg /Volumes/Chrome\ Remote\ Desktop\ Host/Chrome\ Remote\ Desktop\ Host.pkg -target /
+        hdiutil detach /Volumes/Chrome\ Remote\ Desktop\ Host
+        /Applications/Chrome\ Remote\ Desktop\ Host.app/Contents/MacOS/remoting_start_host --code="${{ github.event.inputs.authcode }}" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=MacCRD -pin=${{ github.event.inputs.pincode }}
+
+    - name: Keep Alive
       run: |
-         chmod +x login.sh
-         bash login.sh
-         
-    - name: MacOS System running...
-      uses: mxschmitt/action-tmate@v2
+        echo "Remote desktop is running. You can connect now."
+        sleep 3600 # Keep the instance alive for 1 hour
