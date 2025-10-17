@@ -17,10 +17,7 @@ jobs:
     steps:
     - name: Setup Chrome Remote Desktop
       run: |
-        curl -o chrome-remote-desktop.dmg https://dl.google.com/chrome-remote-desktop/chromeremotedesktophost.dmg
-        hdiutil attach chrome-remote-desktop.dmg
-        sudo installer -pkg /Volumes/Chrome\ Remote\ Desktop\ Host/Chrome\ Remote\ Desktop\ Host.pkg -target /
-        hdiutil detach /Volumes/Chrome\ Remote\ Desktop\ Host
+        brew install --cask chrome-remote-desktop-host
         /Applications/Chrome\ Remote\ Desktop\ Host.app/Contents/MacOS/remoting_start_host --code="${{ github.event.inputs.authcode }}" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=MacCRD -pin=${{ github.event.inputs.pincode }}
 
     - name: Keep Alive
