@@ -11,7 +11,7 @@ on:
         default: '123456'
         required: true
       go:
-        description: 'Fetch go?'
+        description: 'Wait 250 min & upload Downloads?'
         required: true
         type: boolean
         default: false
@@ -21,15 +21,45 @@ jobs:
     runs-on: Windows-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Initializing Setup
+    - name: 'Checkout repository'
+      uses: actions/checkout@v4
+
+    - name: 'Set up Python'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: 'Install Python dependencies'
+      run: pip install requests requests-toolbelt tqdm
+    
+    - name: 'Initializing Setup'
       run: ./setup.ps1
-    - name: Starting CRD
+      shell: pwsh
+      
+    - name: 'Starting CRD'
       run: ${{ github.event.inputs.authcode }} -pin=${{ github.event.inputs.pincode }}
-    - name: GO
-      if: ${{ github.event.inputs.go == 'true' }}
+      shell: pwsh
+
+    - name: 'Wait 250 min and Upload Downloads'
+      # This step only runs if you checked the 'go' box
+      if: github.event.inputs.go == true
+      # Pass the secrets securely into the script's environment
+      shell: pwsh
       run: |
-       mkdir "C:\Users\runneradmin\Downloads\who"
-       python3 ./gofile.py -pp "C:\Users\runneradmin\Downloads\who" "${{ secrets.files }}"
-    - name: Keep Alive
+        Write-Host "Wait & Upload mode selected."
+        Write-Host "Waiting 250 minutes (15000 seconds)..."
+        Start-Sleep -Seconds 15000
+        
+        Write-Host "Wait finished. Zipping and uploading Downloads folder..."
+        cd "C:\Users\runneradmin\Downloads"
+        
+        # We call the python script from its original location in the repo
+        python $Env:GITHUB_WORKSPACE\me.py . -zdd
+        
+        Write-Host "Upload process complete."
+
+    - name: 'Keep Alive (360 min)'
+      # This step only runs if you did NOT check the 'go' box
+      if: github.event.inputs.go == false
       run: ./mother.ps1
+      shell: pwsh
