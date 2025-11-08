@@ -20,17 +20,16 @@ FOLDER_ID = "dabd7396-7d74-4072-bf83-3bb3ac30a28d"
 def zip_folder(folder_path):
     """
     Zips an entire folder and returns the path to the new zip file.
-    The zip file is created in the parent directory.
+    The zip file is created INSIDE the folder being zipped to avoid path conflicts.
     """
-    # Get the absolute path to ensure correct parent/basename
     abs_folder_path = os.path.abspath(folder_path)
-    parent_dir = os.path.dirname(abs_folder_path)
     folder_name = os.path.basename(abs_folder_path)
     
-    # Define the path for the output zip file
-    zip_path = os.path.join(parent_dir, f"{folder_name}.zip")
+    # Create the zip file INSIDE the folder it's zipping
+    zip_name = f"{folder_name}.zip"
+    zip_path = os.path.join(abs_folder_path, zip_name)
     
-    print(f"Zipping folder '{abs_folder_path}' to '{zip_path}'...")
+    print(f"\nZipping folder '{abs_folder_path}' to '{zip_path}'...")
 
     try:
         # Create a new zip file
@@ -38,11 +37,13 @@ def zip_folder(folder_path):
             # Walk the directory tree
             for root, dirs, files in os.walk(abs_folder_path):
                 for file in files:
-                    # Create the full path to the file
                     file_path = os.path.join(root, file)
                     
+                    # Don't add the zip file to itself!
+                    if os.path.abspath(file_path) == os.path.abspath(zip_path):
+                        continue
+                        
                     # Create the relative path for the file inside the zip
-                    # This prevents the zip from containing the full C:\... path
                     archive_name = os.path.relpath(file_path, abs_folder_path)
                     
                     # Write the file to the zip
@@ -53,7 +54,7 @@ def zip_folder(folder_path):
         
     except Exception as e:
         print(f"Error while zipping: {e}", file=sys.stderr)
-        sys.exit(1)
+        return None # Return None on failure
 
 
 def upload_file_with_progress(filepath):
@@ -63,13 +64,12 @@ def upload_file_with_progress(filepath):
     # Check if the file exists
     if not os.path.isfile(filepath):
         print(f"ERROR: File not found at '{filepath}'", file=sys.stderr)
-        # We return False on failure instead of exiting, so a batch upload can continue
         return False
 
     url = "https://upload.gofile.io/uploadfile"
     filename = os.path.basename(filepath)
     
-    # Create the multipart encoder with all form fields
+    # Create the multipart encoder
     encoder = MultipartEncoder(
         fields={
             'file': (filename, open(filepath, 'rb'), 'application/octet-stream'),
@@ -119,73 +119,152 @@ def main():
     # 1. Set up the argument parser
     parser = argparse.ArgumentParser(
         description="Upload a file or folder (as zip) to GoFile.io.",
-        usage=f"python {os.path.basename(sys.argv[0])} [-z | -zd] <path>"
+        usage=f"python {os.path.basename(sys.argv[0])} [-z | -zd | -zdd] [path]"
     )
     
-    # Add the arguments
-    parser.add_argument("path", help="Path to the file or folder to upload. Use '.' for the current directory.")
-    parser.add_argument("-z", "--zip", action="store_true", help="Zip the folder before uploading.")
-    parser.add_argument("-zd", "--zip-delete", action="store_true", help="Zip the folder, upload, and then delete the original folder.")
+    # Use 'nargs=?' to make the path optional, defaulting to '.'
+    parser.add_argument("path", help="Path to the file or folder to upload. Defaults to '.' (current directory).",
+                        nargs='?', default='.')
     
-    # Handle case where no arguments are given
-    if len(sys.argv) == 1:
-        parser.print_help()
-        sys.exit(1)
-        
-    args = parser.parse_args()
+    # Create a mutually exclusive group for zip flags
+    zip_group = parser.add_mutually_exclusive_group()
+    zip_group.add_argument("-z", "--zip", action="store_true", help="Zip the target folder and upload the single zip.")
+    zip_group.add_argument("-zd", "--zip-delete", action="store_true", help="Zip target, upload, and delete original folder/contents.")
+    zip_group.add_argument("-zdd", "--zip-deep-delete", action="store_true", help="Upload loose files, and zip/upload/delete all subfolders.")
 
-    # 2. Decide what to do based on arguments
-    
-    # --- BEHAVIOR 1: Zip flags are used (-z or -zd) ---
+    args = parser.parse_args()
+    script_path = os.path.abspath(sys.argv[0])
+
+    # --- BEHAVIOR 1: NEW! Zip Deep Delete (-zdd) ---
+    if args.zip_deep_delete:
+        target_dir = os.path.abspath(args.path)
+        if not os.path.isdir(target_dir):
+            print(f"Error: -zdd flag must be used with a directory. '{target_dir}' is not valid.", file=sys.stderr)
+            sys.exit(1)
+            
+        print(f"--- Starting Batch Mode (-zdd) for '{target_dir}' ---")
+        items_processed = 0
+        
+        # Iterate over all items in the target directory
+        for item_name in sorted(os.listdir(target_dir)):
+            item_path = os.path.join(target_dir, item_name)
+            
+            # --- Handle Files ---
+            if os.path.isfile(item_path):
+                # Don't upload the script itself
+                if os.path.abspath(item_path) == script_path:
+                    print(f"Skipping script file: {item_name}")
+                    continue
+                
+                items_processed += 1
+                print(f"\n--- Processing file {items_processed}: {item_name} ---")
+                upload_file_with_progress(item_path)
+
+            # --- Handle Subfolders ---
+            elif os.path.isdir(item_path):
+                items_processed += 1
+                print(f"\n--- Processing subfolder {items_processed}: {item_name} ---")
+                
+                # 1. Zip the subfolder
+                zip_path = zip_folder(item_path)
+                if not zip_path:
+                    print(f"Skipping {item_name} due to zipping error.")
+                    continue
+                
+                # 2. Upload the new zip file
+                upload_success = upload_file_with_progress(zip_path)
+                
+                # 3. Clean up the temporary zip file
+                if os.path.isfile(zip_path):
+                    try:
+                        os.remove(zip_path)
+                    except Exception as e:
+                        print(f"Warning: Could not delete temp zip {zip_path}. {e}", file=sys.stderr)
+                
+                # 4. Delete the original subfolder if upload was successful
+                if upload_success:
+                    print(f"Attempting to delete original folder: {item_path}")
+                    try:
+                        shutil.rmtree(item_path)
+                        print("Successfully deleted original folder.")
+                    except Exception as e:
+                        print(f"Error: Could not delete folder {item_path}. {e}", file=sys.stderr)
+                else:
+                    print(f"Upload failed for {item_name}. Original folder will not be deleted.")
+
+        if items_processed == 0:
+            print("No files or subfolders found to process.")
+        print("\n--- Batch Mode complete. ---")
+        sys.exit(0)
+
+    # --- BEHAVIOR 2: Zip Single Folder (-z or -zd) ---
     if args.zip or args.zip_delete:
         if not os.path.isdir(args.path):
             print(f"Error: -z and -zd flags can only be used with a directory. '{args.path}' is not a directory.", file=sys.stderr)
             sys.exit(1)
         
-        # Zip the folder
+        # 1. Zip the folder
         filepath_to_upload = zip_folder(args.path)
+        if not filepath_to_upload:
+             sys.exit(1) # Zipping failed
+             
+        zip_file_to_delete = filepath_to_upload
+        folder_to_delete = os.path.abspath(args.path) if args.zip_delete else None
         
-        # Upload the new zip file
-        # We check for success before deleting
+        # 2. Upload the new zip file
         upload_success = upload_file_with_progress(filepath_to_upload)
         
-        # Delete original folder if -zd AND upload was successful
-        if args.zip_delete:
-            if upload_success:
-                folder_to_delete = os.path.abspath(args.path)
+        # 3. Clean up the temporary zip file
+        if os.path.isfile(zip_file_to_delete):
+            try:
+                os.remove(zip_file_to_delete)
+            except Exception as e:
+                print(f"Warning: Could not delete temp zip {zip_file_to_delete}. {e}", file=sys.stderr)
+
+        # 4. Delete the original folder/contents if requested
+        if folder_to_delete and upload_success:
+            current_working_dir = os.path.abspath(os.getcwd())
+
+            if folder_to_delete == current_working_dir:
+                print(f"\nAttempting to delete contents of current directory: {folder_to_delete}")
+                for item_name in os.listdir(folder_to_delete):
+                    item_path = os.path.join(folder_to_delete, item_name)
+                    if os.path.abspath(item_path) == script_path:
+                        print(f"Skipping active script: {item_name}")
+                        continue
+                    if os.path.isdir(item_path): shutil.rmtree(item_path); print(f"Deleted folder: {item_name}")
+                    elif os.path.isfile(item_path): os.remove(item_path); print(f"Deleted file: {item_name}")
+                print("Successfully deleted contents of original folder.")
+            else:
                 print(f"\nAttempting to delete original folder: {folder_to_delete}")
                 try:
                     shutil.rmtree(folder_to_delete)
                     print("Successfully deleted original folder.")
                 except Exception as e:
                     print(f"Error: Could not delete folder. {e}", file=sys.stderr)
-            else:
-                print("\nUpload failed. Original folder will not be deleted.", file=sys.stderr)
         
+        elif folder_to_delete and not upload_success:
+             print("\nUpload failed. Original folder will not be deleted.", file=sys.stderr)
+
         sys.exit(0) # We are done
 
-    # --- BEHAVIOR 2: No zip flags are used ---
+    # --- BEHAVIOR 3: No zip flags used (Default) ---
     
-    # Case 2a: The path is a single file
+    # Case 3a: The path is a single file
     if os.path.isfile(args.path):
         upload_file_with_progress(args.path)
     
-    # Case 2b: The path is a directory (e.g., ".")
+    # Case 3b: The path is a directory (e.g., ".")
     elif os.path.isdir(args.path):
         print(f"Scanning directory '{os.path.abspath(args.path)}' for files...")
         files_found = 0
-        script_path = os.path.abspath(sys.argv[0])
 
-        # Get a sorted list of items for consistent upload order
         items_in_dir = sorted(os.listdir(args.path))
         
-        # Iterate over all items in the directory
         for item in items_in_dir:
             full_item_path = os.path.join(args.path, item)
             
-            # If it's a file, upload it
             if os.path.isfile(full_item_path):
-                # Safeguard: Don't upload the script itself
                 if os.path.abspath(full_item_path) == script_path:
                     print(f"Skipping script file: {item}")
                     continue
@@ -194,16 +273,13 @@ def main():
                 print(f"\n--- Uploading file {files_found} ({item}) ---")
                 upload_file_with_progress(full_item_path)
             
-            # If it's a directory, skip it
             elif os.path.isdir(full_item_path):
                 print(f"Skipping directory: {item}")
         
-        if files_found == 0:
-            print("No files found in the top-level directory to upload.")
-        else:
-            print(f"\n--- Batch complete: {files_found} files uploaded. ---")
+        if files_found == 0: print("No files found in the top-level directory to upload.")
+        else: print(f"\n--- Batch complete: {files_found} files uploaded. ---")
 
-    # Case 2c: The path doesn't exist
+    # Case 3c: The path doesn't exist
     else:
         print(f"Error: Path '{args.path}' is not a valid file or directory.", file=sys.stderr)
         sys.exit(1)
