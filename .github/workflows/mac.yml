@@ -1,24 +1,23 @@
 name: MacCRD
 on:
   workflow_dispatch:
-    inputs:
-      authcode:
-        description: 'Enter CRD Auth Code'
-        required: true
-      pincode:
-        description: 'Six digit Pin'
-        default: '123456'
-        required: true
+
 jobs:
   build:
     name: MacCRD
     runs-on: macos-latest
 
     steps:
+    - name: Tailscale
+      uses: tailscale/github-action@v4
+      with:
+       oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+       oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+       tags: tag:p
     - name: Setup Chrome Remote Desktop
       run: |
-        brew install --cask chrome-remote-desktop-host
-        /Applications/Chrome\ Remote\ Desktop\ Host.app/Contents/MacOS/remoting_start_host --code="${{ github.event.inputs.authcode }}" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=MacCRD -pin=${{ github.event.inputs.pincode }}
+        brew tap LizardByte/homebrew
+        brew install sunshine
 
     - name: Keep Alive
       run: |
