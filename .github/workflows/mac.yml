@@ -18,6 +18,7 @@ jobs:
       run: |
         brew tap LizardByte/homebrew
         brew install sunshine
+        brew services start lizardbyte/homebrew/sunshine
 
     - name: Keep Alive
       run: |
