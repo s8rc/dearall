@@ -31,6 +31,10 @@ jobs:
 
     - name: FIX - Prevent Polkit Crashes
       run: |
+        # 1. Create the directory first (FIXED)
+        sudo mkdir -p /etc/polkit-1/localauthority/50-local.d/
+        
+        # 2. Write the config file
         sudo bash -c 'cat <<EOF > /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla
         [Allow Colord all Users]
         Identity=unix-user:*
@@ -47,13 +51,11 @@ jobs:
         sudo dpkg -i chrome-remote-desktop_current_amd64.deb || sudo apt-get install -f -y
         sudo groupadd -f chrome-remote-desktop
 
-        # --- CRITICAL FIX START ---
-        # We use startxfce4 instead of xfce4-session to ensure D-Bus starts correctly
+        # FIX: Use startxfce4 + unset DBUS/XDG vars
         sudo bash -c 'echo "unset DBUS_SESSION_BUS_ADDRESS" > /home/Ubuntu/.chrome-remote-desktop-session'
         sudo bash -c 'echo "unset XDG_RUNTIME_DIR" >> /home/Ubuntu/.chrome-remote-desktop-session'
         sudo bash -c 'echo "export CHROME_REMOTE_DESKTOP_DEFAULT_DESKTOP_SIZES=1280x720" >> /home/Ubuntu/.chrome-remote-desktop-session'
         sudo bash -c 'echo "exec /usr/bin/startxfce4" >> /home/Ubuntu/.chrome-remote-desktop-session'
-        # --- CRITICAL FIX END ---
         
         sudo chown Ubuntu:Ubuntu /home/Ubuntu/.chrome-remote-desktop-session
         sudo chmod 755 /home/Ubuntu/.chrome-remote-desktop-session
