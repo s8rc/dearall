@@ -17,24 +17,21 @@ jobs:
     steps:
     - name: Creating User to Login
       run: |
-         # Create the user
+         # Create user
          sudo useradd -m Ubuntu 
          sudo adduser Ubuntu sudo
-         
-         # Set password (optional now, but good for login)
          echo 'Ubuntu:1234' | sudo chpasswd
-         
-         # Set shell to bash
          sudo sed -i 's/\/bin\/sh/\/bin\/bash/g' /etc/passwd
          
-         # CRITICAL FIX: Allow 'Ubuntu' to use sudo without a password
+         # Allow sudo without password (CRITICAL for setup)
          echo 'Ubuntu ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/Ubuntu
          sudo chmod 0440 /etc/sudoers.d/Ubuntu
 
-    - name: Installing Desktop Environment (XFCE)
+    - name: Installing Desktop Environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y xfce4 xfce4-terminal desktop-base xscreensaver
+        # Added dbus-x11 to fix the 'failsafe session' error
+        sudo apt-get install -y xfce4 xfce4-terminal desktop-base xscreensaver dbus-x11
 
     - name: Installing Google Chrome Remote Desktop
       run: |
@@ -44,20 +41,22 @@ jobs:
         # 2. Download CRD
         wget https://dl.google.com/linux/direct/chrome-remote-desktop_current_amd64.deb
 
-        # 3. Install CRD (Fix broken dependencies automatically)
+        # 3. Install CRD
         sudo dpkg -i chrome-remote-desktop_current_amd64.deb || sudo apt-get install -f -y
 
-        # 4. FIX: Manually create the group if the installer failed to do so
+        # 4. Create Group
         sudo groupadd -f chrome-remote-desktop
 
-        # 5. Configure XFCE Session
-        sudo bash -c 'echo "exec /etc/X11/Xsession /usr/bin/xfce4-session" > /etc/chrome-remote-desktop-session'  
+        # 5. FIX: Configure Session for the Ubuntu user specifically
+        # We unset DBUS_SESSION_BUS_ADDRESS to prevent the crash you saw
+        sudo bash -c 'echo "unset DBUS_SESSION_BUS_ADDRESS" > /home/Ubuntu/.chrome-remote-desktop-session'
+        sudo bash -c 'echo "exec /usr/bin/startxfce4" >> /home/Ubuntu/.chrome-remote-desktop-session'
+        sudo chown Ubuntu:Ubuntu /home/Ubuntu/.chrome-remote-desktop-session
+        sudo chmod 755 /home/Ubuntu/.chrome-remote-desktop-session
 
-        # 6. Disable Display Managers (Silence "does not exist" errors)
+        # 6. Disable LightDM (Silence errors)
         sudo systemctl disable lightdm.service 2>/dev/null || true
         sudo systemctl stop lightdm.service 2>/dev/null || true
-        sudo systemctl disable gdm3.service 2>/dev/null || true
-        sudo systemctl stop gdm3.service 2>/dev/null || true
 
         # 7. Add user to CRD group
         sudo adduser Ubuntu chrome-remote-desktop
