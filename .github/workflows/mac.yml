@@ -5,7 +5,7 @@ on:
 jobs:
   build:
     name: MacCRD
-    runs-on: macos-13
+    runs-on: macos-latest
 
     steps:
 
@@ -38,7 +38,13 @@ jobs:
 
           # Set VNC Password to "runnerrdp"
           echo runnerrdp | perl -we 'BEGIN { @k = unpack "C*", pack "H*", "1734516E8BA8C5E2FF1C39567390ADCA"}; $_ = <>; chomp; s/^(.{8}).*/$1/; @p = unpack "C*", $_; foreach (@k) { printf "%02X", $_ ^ (shift @p || 0) }; print "\n"' | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
+          # 3. Configure connection options (Force Legacy VNC on)
+          sudo defaults write /Library/Preferences/com.apple.RemoteManagement VNCAlwaysStartOnConsole -bool true
+          sudo defaults write /Library/Preferences/com.apple.RemoteManagement VNCLegacyConnectionsEnabled -bool true
 
+          # 4. Force Start the Screen Sharing Service (Bypassing Kickstart)
+          sudo launchctl enable system/com.apple.screensharing
+          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist
           # Restart Agent to apply changes
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -restart -agent -console
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate
