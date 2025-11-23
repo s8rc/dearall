@@ -17,7 +17,6 @@ jobs:
     steps:
     - name: Creating User to Login
       run: |
-         # Create user 'Ubuntu' with password '1234'
          sudo useradd -m Ubuntu 
          sudo adduser Ubuntu sudo
          echo 'Ubuntu:1234' | sudo chpasswd
@@ -30,25 +29,28 @@ jobs:
 
     - name: Installing Google Chrome Remote Desktop
       run: |
-        # 1. Install dependencies explicitly first
+        # 1. Install dependencies
         sudo apt-get install -y xbase-clients python3-psutil xserver-xorg-video-dummy xvfb
 
         # 2. Download CRD
         wget https://dl.google.com/linux/direct/chrome-remote-desktop_current_amd64.deb
 
-        # 3. Install CRD (catch dpkg error and fix immediately)
+        # 3. Install CRD (Fix broken dependencies automatically)
         sudo dpkg -i chrome-remote-desktop_current_amd64.deb || sudo apt-get install -f -y
 
-        # 4. Configure XFCE Session
+        # 4. FIX: Manually create the group if the installer failed to do so
+        sudo groupadd -f chrome-remote-desktop
+
+        # 5. Configure XFCE Session
         sudo bash -c 'echo "exec /etc/X11/Xsession /usr/bin/xfce4-session" > /etc/chrome-remote-desktop-session'  
 
-        # 5. Disable Display Managers (Fixed: Added '|| true' so it doesn't crash if missing)
-        sudo systemctl disable lightdm.service || true
-        sudo systemctl stop lightdm.service || true
-        sudo systemctl disable gdm3.service || true
-        sudo systemctl stop gdm3.service || true
+        # 6. Disable Display Managers (Silence "does not exist" errors)
+        sudo systemctl disable lightdm.service 2>/dev/null || true
+        sudo systemctl stop lightdm.service 2>/dev/null || true
+        sudo systemctl disable gdm3.service 2>/dev/null || true
+        sudo systemctl stop gdm3.service 2>/dev/null || true
 
-        # 6. Add user to CRD group
+        # 7. Add user to CRD group
         sudo adduser Ubuntu chrome-remote-desktop
 
     - name: Installing Google Chrome & Tools
@@ -57,7 +59,6 @@ jobs:
         sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
         
         sudo apt-get install -y python3-pip nautilus nano expect
-        # Added --break-system-packages for newer Ubuntu versions
         pip3 install nbformat gdown pika --break-system-packages
 
     - name: Installing VS Code & Node
@@ -77,7 +78,6 @@ jobs:
 
     - name: Initialize GRDP
       run: |   
-        # Run the setup script as the 'Ubuntu' user
         sudo -u Ubuntu bash -c '
         expect -c "
         spawn ./setup.sh
@@ -91,5 +91,4 @@ jobs:
 
     - name: Keep Alive
       run: |
-        # Keeps the runner active for 6 hours max
         while true; do sleep 30; done
