@@ -17,10 +17,19 @@ jobs:
     steps:
     - name: Creating User to Login
       run: |
+         # Create the user
          sudo useradd -m Ubuntu 
          sudo adduser Ubuntu sudo
+         
+         # Set password (optional now, but good for login)
          echo 'Ubuntu:1234' | sudo chpasswd
+         
+         # Set shell to bash
          sudo sed -i 's/\/bin\/sh/\/bin\/bash/g' /etc/passwd
+         
+         # CRITICAL FIX: Allow 'Ubuntu' to use sudo without a password
+         echo 'Ubuntu ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/Ubuntu
+         sudo chmod 0440 /etc/sudoers.d/Ubuntu
 
     - name: Installing Desktop Environment (XFCE)
       run: |
