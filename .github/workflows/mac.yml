@@ -8,31 +8,51 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - name: Tailscale
-      uses: tailscale/github-action@v4
-      with:
-       oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-       oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-       tags: tag:p
-    - name: Setup Chrome Remote Desktop
-      run: |
-        sudo mdutil -i off -a
-        #Create new account
-        sudo dscl . -create /Users/runneradmin
-        sudo dscl . -create /Users/runneradmin UserShell /bin/bash
-        sudo dscl . -create /Users/runneradmin RealName Runner_Admin
-        sudo dscl . -create /Users/runneradmin UniqueID 1001
-        sudo dscl . -create /Users/runneradmin PrimaryGroupID 80
-        sudo dscl . -create /Users/runneradmin NFSHomeDirectory /Users/tcv
-        sudo dscl . -passwd /Users/runneradmin P@ssw0rd!
-        sudo dscl . -passwd /Users/runneradmin P@ssw0rd!
-        sudo createhomedir -c -u runneradmin > /dev/null
-        sudo dscl . -append /Groups/admin GroupMembership runneradmin
-        brew tap LizardByte/homebrew
-        brew install sunshine
-        brew services start lizardbyte/homebrew/sunshine
 
-    - name: Keep Alive
-      run: |
-        echo "Remote desktop is running. You can connect now."
-        sleep 3600 # Keep the instance alive for 1 hour
+
+      - name: Setup System & User
+        run: |
+          # Disable Spotlight indexing to save resources
+          sudo mdutil -i off -a
+
+          # Create new account "runneradmin"
+          sudo dscl . -create /Users/runneradmin
+          sudo dscl . -create /Users/runneradmin UserShell /bin/bash
+          sudo dscl . -create /Users/runneradmin RealName Runner_Admin
+          sudo dscl . -create /Users/runneradmin UniqueID 1001
+          sudo dscl . -create /Users/runneradmin PrimaryGroupID 80
+          # FIXED: Changed home dir from /Users/tcv to /Users/runneradmin
+          sudo dscl . -create /Users/runneradmin NFSHomeDirectory /Users/runneradmin
+          sudo dscl . -passwd /Users/runneradmin P@ssw0rd!
+          sudo createhomedir -c -u runneradmin > /dev/null
+          sudo dscl . -append /Groups/admin GroupMembership runneradmin
+
+      - name: Configure VNC (ARD)
+        run: |
+          # Enable VNC and ARD
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -allowAccessFor -allUsers -privs -all
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -configure -clientopts -setvnclegacy -vnclegacy yes 
+
+          # Set VNC Password to "runnerrdp"
+          echo runnerrdp | perl -we 'BEGIN { @k = unpack "C*", pack "H*", "1734516E8BA8C5E2FF1C39567390ADCA"}; $_ = <>; chomp; s/^(.{8}).*/$1/; @p = unpack "C*", $_; foreach (@k) { printf "%02X", $_ ^ (shift @p || 0) }; print "\n"' | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
+
+          # Restart Agent to apply changes
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -restart -agent -console
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate
+
+      - name: Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:p
+
+      - name: Keep Alive
+        run: |
+          echo "---------------------------------------------------"
+          echo "Tailscale IP should be visible in your Tailscale Admin Console."
+          echo "VNC Password: runnerrdp"
+          echo "User: runneradmin / Pass: P@ssw0rd!"
+          echo "---------------------------------------------------"
+          # Keep alive for 6 hours (GitHub Actions max limit)
+          sleep 21600
