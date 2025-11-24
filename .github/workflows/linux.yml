@@ -5,7 +5,16 @@ on:
       auth:
         description: 'GRDP Authorization Code'
         required: true
-        default: 'paste your code here'
+      desktop:
+        description: 'Choose Desktop Environment'
+        required: true
+        default: 'lxde'
+        type: choice
+        options:
+        - lxde
+        - lxqt
+        - gnome
+        - kde
    
 defaults:
   run:
@@ -24,11 +33,24 @@ jobs:
          echo 'Ubuntu ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/Ubuntu
          sudo chmod 0440 /etc/sudoers.d/Ubuntu
 
-    - name: Installing Desktop Environment (LXDE)
+    - name: Installing Desktop Environment
       run: |
         sudo apt-get update
-        # Installing LXDE instead of XFCE
-        sudo apt-get install -y lxde-core lxde-common openbox xterm desktop-base xscreensaver dbus-x11 policykit-1
+        sudo apt-get install -y dbus-x11 policykit-1 xscreensaver xbase-clients python3-psutil xserver-xorg-video-dummy xvfb
+
+        DESKTOP="${{ github.event.inputs.desktop }}"
+        echo "Installing $DESKTOP..."
+
+        if [ "$DESKTOP" = "lxde" ]; then
+            sudo apt-get install -y lxde-core lxde-common openbox desktop-base
+        elif [ "$DESKTOP" = "lxqt" ]; then
+            sudo apt-get install -y lxqt-core openbox
+        elif [ "$DESKTOP" = "gnome" ]; then
+            # We use minimal to save time, full gnome takes too long
+            sudo apt-get install -y ubuntu-desktop-minimal
+        elif [ "$DESKTOP" = "kde" ]; then
+            sudo apt-get install -y kde-plasma-desktop
+        fi
 
     - name: FIX - Prevent Polkit Crashes
       run: |
@@ -44,23 +66,35 @@ jobs:
 
     - name: Installing Google Chrome Remote Desktop
       run: |
-        sudo apt-get install -y xbase-clients python3-psutil xserver-xorg-video-dummy xvfb
         wget https://dl.google.com/linux/direct/chrome-remote-desktop_current_amd64.deb
         sudo dpkg -i chrome-remote-desktop_current_amd64.deb || sudo apt-get install -f -y
         sudo groupadd -f chrome-remote-desktop
 
-        # --- LXDE CONFIGURATION ---
-        sudo bash -c 'cat <<EOF > /home/Ubuntu/.chrome-remote-desktop-session
-        #!/bin/bash
-        export CHROME_REMOTE_DESKTOP_DEFAULT_DESKTOP_SIZES=1280x720
-        unset DBUS_SESSION_BUS_ADDRESS
-        unset XDG_RUNTIME_DIR
-        exec /usr/bin/startlxde
-        EOF'
-        # ---------------------------
+        # --- DYNAMIC SESSION CONFIGURATION ---
+        DESKTOP="${{ github.event.inputs.desktop }}"
         
+        # Start building the session file
+        echo "#!/bin/bash" > chrome-remote-desktop-session
+        echo "export CHROME_REMOTE_DESKTOP_DEFAULT_DESKTOP_SIZES=1280x720" >> chrome-remote-desktop-session
+        echo "unset DBUS_SESSION_BUS_ADDRESS" >> chrome-remote-desktop-session
+        echo "unset XDG_RUNTIME_DIR" >> chrome-remote-desktop-session
+        
+        # Add the specific exec command
+        if [ "$DESKTOP" = "lxde" ]; then
+            echo "exec /usr/bin/startlxde" >> chrome-remote-desktop-session
+        elif [ "$DESKTOP" = "lxqt" ]; then
+            echo "exec /usr/bin/startlxqt" >> chrome-remote-desktop-session
+        elif [ "$DESKTOP" = "gnome" ]; then
+            echo "exec /usr/bin/gnome-session" >> chrome-remote-desktop-session
+        elif [ "$DESKTOP" = "kde" ]; then
+            echo "exec /usr/bin/startplasma-x11" >> chrome-remote-desktop-session
+        fi
+
+        # Move and Permissions
+        sudo mv chrome-remote-desktop-session /home/Ubuntu/.chrome-remote-desktop-session
         sudo chown Ubuntu:Ubuntu /home/Ubuntu/.chrome-remote-desktop-session
         sudo chmod 755 /home/Ubuntu/.chrome-remote-desktop-session
+        # -------------------------------------
 
         sudo systemctl disable lightdm.service 2>/dev/null || true
         sudo systemctl stop lightdm.service 2>/dev/null || true
