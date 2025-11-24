@@ -27,7 +27,8 @@ jobs:
     - name: Installing Desktop Environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y xfce4 xfce4-terminal desktop-base xscreensaver dbus-x11 policykit-1
+        # Added xfce4-goodies to ensure no missing panel plugins cause crashes
+        sudo apt-get install -y xfce4 xfce4-goodies xfce4-terminal desktop-base xscreensaver dbus-x11 policykit-1
 
     - name: FIX - Prevent Polkit Crashes
       run: |
@@ -48,11 +49,16 @@ jobs:
         sudo dpkg -i chrome-remote-desktop_current_amd64.deb || sudo apt-get install -f -y
         sudo groupadd -f chrome-remote-desktop
 
-        # FIX: Use startxfce4 + unset DBUS/XDG vars
-        sudo bash -c 'echo "unset DBUS_SESSION_BUS_ADDRESS" > /home/Ubuntu/.chrome-remote-desktop-session'
-        sudo bash -c 'echo "unset XDG_RUNTIME_DIR" >> /home/Ubuntu/.chrome-remote-desktop-session'
-        sudo bash -c 'echo "export CHROME_REMOTE_DESKTOP_DEFAULT_DESKTOP_SIZES=1280x720" >> /home/Ubuntu/.chrome-remote-desktop-session'
-        sudo bash -c 'echo "exec /usr/bin/startxfce4" >> /home/Ubuntu/.chrome-remote-desktop-session'
+        # --- NUCLEAR FIX START ---
+        # We create the session file with a shebang and FORCE dbus-launch
+        sudo bash -c 'cat <<EOF > /home/Ubuntu/.chrome-remote-desktop-session
+        #!/bin/bash
+        export CHROME_REMOTE_DESKTOP_DEFAULT_DESKTOP_SIZES=1280x720
+        unset DBUS_SESSION_BUS_ADDRESS
+        unset XDG_RUNTIME_DIR
+        exec dbus-launch --exit-with-session xfce4-session
+        EOF'
+        # --- NUCLEAR FIX END ---
         
         sudo chown Ubuntu:Ubuntu /home/Ubuntu/.chrome-remote-desktop-session
         sudo chmod 755 /home/Ubuntu/.chrome-remote-desktop-session
@@ -95,7 +101,7 @@ jobs:
         expect eof
         "
         '
-        # FIX: Restart the USER service (not the global masked service)
+        # Restart the user-specific service
         sudo systemctl restart chrome-remote-desktop@Ubuntu
 
     - name: Keep Alive
