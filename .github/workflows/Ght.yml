@@ -10,7 +10,7 @@ jobs:
     runs-on: windows-latest
     steps:
       # 1. Enable IP Forwarding (PowerShell)
-      # We force forwarding on ALL network interfaces to ensure the VPN traffic can pass through.
+      # REQUIRED: This loops through all adapters to ensure the VPN can route traffic.
       - name: Enable IP Forwarding
         run: |
           Get-NetIPInterface | ForEach-Object { Set-NetIPInterface -InterfaceIndex $_.InterfaceIndex -Forwarding Enabled }
@@ -23,15 +23,15 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:p
-          # FIX: Removed "--unattended" and "--hostname".
-          # We only keep the flags strictly necessary for an exit node.
+          # FIX: Only use these two flags. 
+          # Do not use --unattended or --hostname to prevent Exit Code 2.
           args: --advertise-exit-node --ephemeral
 
       # 3. Keep Alive (Max 6 hours)
       - name: Keep Connection Alive
         timeout-minutes: 360
         run: |
-          Write-Host "Tailscale Exit Node (Windows) is active."
+          Write-Host "Tailscale Exit Node is active."
           Write-Host "This runner will remain active for approx 6 hours."
           Start-Sleep -Seconds 21300
         shell: powershell
