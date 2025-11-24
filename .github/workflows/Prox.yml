@@ -1,0 +1,30 @@
+name: Tailscale Exit Node
+
+on:
+  # Run automatically every 6 hours (GitHub runners time out after 6 hours)
+  schedule:
+    - cron: '0 */6 * * *'
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  vpn-exit-node:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:p
+          # Critical: Advertise as exit node, set hostname, and mark as ephemeral
+          args: --advertise-exit-node --hostname=gh-action-exit --ephemeral
+
+      - name: Keep Connection Alive
+        # GitHub Actions have a hard limit of 6 hours (21600 seconds).
+        # We sleep for just under that limit to keep the VPN tunnel open.
+        timeout-minutes: 360
+        run: |
+          echo "Tailscale Exit Node is active."
+          echo "This runner will remain active for approx 6 hours."
+          sleep 21300
