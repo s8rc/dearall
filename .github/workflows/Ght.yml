@@ -2,7 +2,6 @@ name: Tailscale Exit Node (Windows)
 
 on:
   schedule:
-    # Run every 6 hours
     - cron: '0 */6 * * *'
   workflow_dispatch:
 
@@ -11,10 +10,10 @@ jobs:
     runs-on: windows-latest
     steps:
       # 1. Enable IP Forwarding (PowerShell)
-      # Windows defaults to blocking routing. We must enable it on all interfaces.
+      # We force forwarding on ALL network interfaces to ensure the VPN traffic can pass through.
       - name: Enable IP Forwarding
         run: |
-          Set-NetIPInterface -Forwarding Enabled
+          Get-NetIPInterface | ForEach-Object { Set-NetIPInterface -InterfaceIndex $_.InterfaceIndex -Forwarding Enabled }
         shell: powershell
 
       # 2. Connect to Tailscale
@@ -24,8 +23,9 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:p
-          # Using --unattended is often helpful on Windows to suppress prompts
-          args: --advertise-exit-node --hostname=gh-action-win-exit --ephemeral --unattended
+          # FIX: Removed "--unattended" and "--hostname".
+          # We only keep the flags strictly necessary for an exit node.
+          args: --advertise-exit-node --ephemeral
 
       # 3. Keep Alive (Max 6 hours)
       - name: Keep Connection Alive
@@ -33,6 +33,5 @@ jobs:
         run: |
           Write-Host "Tailscale Exit Node (Windows) is active."
           Write-Host "This runner will remain active for approx 6 hours."
-          # PowerShell command to sleep for 21300 seconds (approx 5h 55m)
           Start-Sleep -Seconds 21300
         shell: powershell
