@@ -9,25 +9,27 @@ jobs:
   vpn-exit-node:
     runs-on: ubuntu-latest
     steps:
-      # STEP 1: Enable IP Forwarding (Required for Exit Nodes)
+      # 1. Enable IP Forwarding (Required for Exit Nodes)
       - name: Enable IP Forwarding
         run: |
           echo 'net.ipv4.ip_forward = 1' | sudo tee -a /etc/sysctl.d/99-tailscale.conf
           echo 'net.ipv6.conf.all.forwarding = 1' | sudo tee -a /etc/sysctl.d/99-tailscale.conf
           sudo sysctl -p /etc/sysctl.d/99-tailscale.conf
 
-      # STEP 2: Connect to Tailscale
-      - name: Connect to Tailscale
+      # 2. Connect to Tailscale
+      - name: Tailscale
         uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          # NOTE: We moved 'tags' into 'args' below to prevent flag conflicts
-          args: --advertise-tags=tag:p --advertise-exit-node --hostname=gh-action-exit --ephemeral
+          tags: tag:p
+          # args must NOT contain --advertise-tags (handled by 'tags' above)
+          args: --advertise-exit-node --hostname=gh-action-exit --ephemeral
 
-      # STEP 3: Keep Alive
+      # 3. Keep Alive (Max 6 hours)
       - name: Keep Connection Alive
         timeout-minutes: 360
         run: |
           echo "Tailscale Exit Node is active."
+          echo "This runner will remain active for approx 6 hours."
           sleep 21300
