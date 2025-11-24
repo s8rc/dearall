@@ -31,10 +31,7 @@ jobs:
 
     - name: FIX - Prevent Polkit Crashes
       run: |
-        # 1. Create the directory first (FIXED)
         sudo mkdir -p /etc/polkit-1/localauthority/50-local.d/
-        
-        # 2. Write the config file
         sudo bash -c 'cat <<EOF > /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla
         [Allow Colord all Users]
         Identity=unix-user:*
@@ -87,7 +84,7 @@ jobs:
 
     - name: Initialize GRDP
       run: |   
-        sudo systemctl stop chrome-remote-desktop
+        # Run the setup script
         sudo -u Ubuntu bash -c '
         expect -c "
         spawn ./setup.sh
@@ -98,7 +95,8 @@ jobs:
         expect eof
         "
         '
-        sudo systemctl start chrome-remote-desktop
+        # FIX: Restart the USER service (not the global masked service)
+        sudo systemctl restart chrome-remote-desktop@Ubuntu
 
     - name: Keep Alive
       run: |
