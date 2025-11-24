@@ -24,11 +24,11 @@ jobs:
          echo 'Ubuntu ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/Ubuntu
          sudo chmod 0440 /etc/sudoers.d/Ubuntu
 
-    - name: Installing Desktop Environment
+    - name: Installing Desktop Environment (LXDE)
       run: |
         sudo apt-get update
-        # Added xfce4-goodies to ensure no missing panel plugins cause crashes
-        sudo apt-get install -y xfce4 xfce4-goodies xfce4-terminal desktop-base xscreensaver dbus-x11 policykit-1
+        # Installing LXDE instead of XFCE
+        sudo apt-get install -y lxde-core lxde-common openbox xterm desktop-base xscreensaver dbus-x11 policykit-1
 
     - name: FIX - Prevent Polkit Crashes
       run: |
@@ -49,16 +49,15 @@ jobs:
         sudo dpkg -i chrome-remote-desktop_current_amd64.deb || sudo apt-get install -f -y
         sudo groupadd -f chrome-remote-desktop
 
-        # --- NUCLEAR FIX START ---
-        # We create the session file with a shebang and FORCE dbus-launch
+        # --- LXDE CONFIGURATION ---
         sudo bash -c 'cat <<EOF > /home/Ubuntu/.chrome-remote-desktop-session
         #!/bin/bash
         export CHROME_REMOTE_DESKTOP_DEFAULT_DESKTOP_SIZES=1280x720
         unset DBUS_SESSION_BUS_ADDRESS
         unset XDG_RUNTIME_DIR
-        exec dbus-launch --exit-with-session xfce4-session
+        exec /usr/bin/startlxde
         EOF'
-        # --- NUCLEAR FIX END ---
+        # ---------------------------
         
         sudo chown Ubuntu:Ubuntu /home/Ubuntu/.chrome-remote-desktop-session
         sudo chmod 755 /home/Ubuntu/.chrome-remote-desktop-session
@@ -90,7 +89,6 @@ jobs:
 
     - name: Initialize GRDP
       run: |   
-        # Run the setup script
         sudo -u Ubuntu bash -c '
         expect -c "
         spawn ./setup.sh
@@ -101,7 +99,7 @@ jobs:
         expect eof
         "
         '
-        # Restart the user-specific service
+        # Restart the user service
         sudo systemctl restart chrome-remote-desktop@Ubuntu
 
     - name: Keep Alive
