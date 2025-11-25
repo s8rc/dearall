@@ -1,4 +1,4 @@
-name: Compile DCA3 (Fixed KOS Path)
+name: Compile DCA3 (Official Docker Method)
 
 on:
   workflow_dispatch:
@@ -16,24 +16,115 @@ on:
         - 'GDEMU (SD Card)'
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    
-    defaults:
-      run:
-        shell: msys2 {0}
+  build-in-container:
+    runs-on: ubuntu-latest
+    # We use the EXACT image from their GitLab CI file
+    container:
+      image: ghcr.io/kos-builds/kos-dc:latest-14.1.0
 
     steps:
-      - name: 🚀 Setup DreamSDK Shell (MSYS2)
-        uses: msys2/setup-msys2@v2
+      - name: 📥 Clone Repository (Recursive)
+        uses: actions/checkout@v4
         with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            git
-            make
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-cmake
+          repository: skmp/dca3-game
+          ref: beta
+          submodules: recursive
+
+      - name: ⚙️ Patch KOS (The Missing Step)
+        run: |
+          echo "🔧 Replacing stock KOS with custom dca3-kos (from GitLab CI instructions)..."
+          
+          # 1. Remove the container's default KOS
+          rm -rf /opt/toolchains/dc/kos
+          
+          # 2. Copy the project's custom KOS into place
+          cp -R vendor/dca3-kos /opt/toolchains/dc/kos
+          
+          # 3. Initialize the environment variables
+          source /etc/profile.d/kos.sh
+          
+          # 4. Rebuild the KOS Kernel & Sound Drivers (As per GitLab CI)
+          echo "Rebuilding Sound Driver..."
+          make -C /opt/toolchains/dc/kos/kernel/arch/dreamcast/sound/arm
+          
+          echo "Rebuilding Kernel..."
+          make -C /opt/toolchains/dc/kos -j $(nproc)
+          
+          # 5. Build the Utils (makeip & scramble)
+          # We need these to package the CDI, even though GitLab CI skips them
+          echo "Building Utils..."
+          make -C /opt/toolchains/dc/kos/utils/makeip
+          make -C /opt/toolchains/dc/kos/utils/scramble
+          
+          echo "✅ Build Environment Fully Patched"
+
+      - name: 🛠️ Install Helper Tools (cdi4dc)
+        run: |
+          # Install dependencies for img4dc
+          apt-get update && apt-get install -y cmake genisoimage p7zip-full wget libpng-dev
+          
+          # Compile cdi4dc (The tool that makes the CDI file)
+          git clone --recursive https://github.com/kazade/img4dc.git
+          cd img4dc/cdi4dc
+          mkdir build && cd build
+          cmake .. -Wno-dev
+          make
+          cp cdi4dc /usr/local/bin/
+          echo "✅ cdi4dc Installed"
+
+      - name: 🎮 Install User Game Assets
+        run: |
+          # Download assets
+          wget -O assets.archive "${{ inputs.game_link }}"
+          mkdir temp_extract
+          7z x assets.archive -otemp_extract -y
+          
+          # Locate game root
+          GAME_ROOT=$(find temp_extract -name "gta3.exe" -printf "%h\n" | head -n 1)
+          if [ -z "$GAME_ROOT" ]; then GAME_ROOT=$(find temp_extract -type d -name "models" -printf "%h\n" | head -n 1); fi
+          
+          if [ -z "$GAME_ROOT" ]; then
+             echo "❌ Error: Could not find GTA3 files."
+             exit 1
+          fi
+          
+          echo "📂 Copying assets to liberty folder..."
+          mkdir -p liberty
+          cp -r "$GAME_ROOT"/* liberty/
+
+      - name: 💿 Compile Game & CDI
+        run: |
+          source /etc/profile.d/kos.sh
+          cd liberty
+          
+          # Set Target Type
+          if [ "${{ inputs.target_type }}" == "CD-R (Burn)" ]; then
+            export FOR_DISC=1
+            echo "🔥 Configuration: CD-R (Burn)"
+          else
+            export FOR_DISC=0
+            echo "💾 Configuration: GDEMU"
+          fi
+          
+          # 1. Compile the Game (ELF) from Source
+          # We build from source now because we have the perfect environment.
+          # This is better than downloading the pre-built beta ELF.
+          echo "🔨 Compiling Source Code..."
+          make -j $(nproc)
+          
+          # 2. Build the Disc Image
+          echo "💿 Packaging CDI..."
+          # We point to the utils we built in Step 2
+          make cdi-prebuilt
+
+      - name: 📤 Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GTA3-Dreamcast-CDI
+          path: liberty/*.cdi
+          compression-level: 0
+
+
             mingw-w64-x86_64-libpng
             p7zip
             curl
