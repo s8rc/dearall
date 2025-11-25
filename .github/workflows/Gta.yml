@@ -16,22 +16,27 @@ jobs:
       - name: 🚀 Install Dependencies
         run: |
           sudo apt-get update
-          # Added binutils-multiarch (for objcopy) and libpng-dev (for img4dc)
+          # binutils-multiarch is CRITICAL for objcopy (ELF -> BIN conversion)
           sudo apt-get install -y genisoimage p7zip-full wget make cmake build-essential git binutils-multiarch zlib1g-dev libpng-dev
           
-      - name: 🛠️ Build cdi4dc (Fixed)
+      - name: 🛠️ Build cdi4dc (Corrected)
         run: |
-          # FIXED: Added --recursive to fetch libedc submodule
+          # Clone recursively
           git clone --recursive https://github.com/kazade/img4dc.git
-          cd img4dc/cdi4dc
+          
+          # CRITICAL FIX: Build from the ROOT folder, not the subdir
+          cd img4dc
           mkdir build && cd build
           cmake ..
           make
-          sudo make install
+          
+          # Manually install the binary (Standard CMake install might be missing in this repo)
+          echo "Installing cdi4dc to /usr/local/bin..."
+          sudo cp cdi4dc/cdi4dc /usr/local/bin/cdi4dc
+          sudo chmod +x /usr/local/bin/cdi4dc
           
       - name: ⬇️ Download Latest DCA3 Executable (ELF)
         run: |
-          # Create folder structure
           mkdir -p dca3-game/liberty
           
           # Download latest artifact from GitLab CI
@@ -81,14 +86,14 @@ jobs:
           # 4. Scramble the Binary (Required for Dreamcast boot)
           ./scramble main.bin 1ST_READ.BIN
           
-          # 5. Clean up temp files to save space on disc
+          # 5. Clean up temp files
           rm dca-liberty.elf main.bin scramble.c scramble
           
           # 6. Create ISO
           # -C 0,11702 is the specific offset for self-booting Dreamcast discs
           mkisofs -C 0,11702 -V DCA3 -G IP.BIN -r -J -l -o dca3.iso .
           
-          # 7. Convert to CDI
+          # 7. Convert to CDI using our newly built tool
           cdi4dc dca3.iso dca3_liberty.cdi
 
       - name: 📤 Upload Artifact
@@ -97,5 +102,3 @@ jobs:
           name: GTA3-Dreamcast-CDI
           path: dca3-game/liberty/dca3_liberty.cdi
           compression-level: 0
-
-
