@@ -46,23 +46,32 @@ jobs:
           mkdir -p dreamsdk/utils/makeip
           mkdir -p dreamsdk/utils/scramble
           
-          # 2. Compile 'makeip' (Fixed: Added libpng libs and curl)
+          # 2. Clone KallistiOS (Depth 1 to save time) to get the tools source
+          echo "Cloning KallistiOS utils..."
+          git clone --depth 1 https://github.com/KallistiOS/KallistiOS.git temp_kos
+          
+          # 3. Compile 'makeip'
           echo "Compiling makeip..."
-          curl -L -o makeip.c https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/makeip/makeip.c
+          # Copy source to where we need it or just compile from temp
+          cp temp_kos/utils/makeip/makeip.c .
           gcc makeip.c -o dreamsdk/utils/makeip/makeip.exe -static -lpng -lz
           
-          # 3. Compile 'scramble'
+          # 4. Compile 'scramble'
           echo "Compiling scramble..."
-          curl -L -o scramble.c https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/scramble/scramble.c
+          cp temp_kos/utils/scramble/scramble.c .
           gcc scramble.c -o dreamsdk/utils/scramble/scramble.exe -static
           
-          # 4. Compile 'cdi4dc'
+          # 5. Compile 'cdi4dc'
           echo "Compiling cdi4dc..."
           git clone --recursive https://github.com/kazade/img4dc.git
           cd img4dc/cdi4dc
           cmake -G "MSYS Makefiles" .
           make
           cp cdi4dc.exe /usr/bin/
+          
+          # Clean up temp sources
+          cd ../..
+          rm -rf temp_kos img4dc makeip.c scramble.c
           
           echo "✅ DreamSDK Tools Installed"
 
@@ -148,3 +157,5 @@ jobs:
           name: GTA3-Dreamcast-CDI
           path: dca3-game/liberty/*.cdi
           compression-level: 0
+
+
