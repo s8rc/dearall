@@ -1,4 +1,4 @@
-name: Compile DCA3 (Official Guide Method)
+name: Compile DCA3 (Windows DreamSDK)
 
 on:
   workflow_dispatch:
@@ -16,41 +16,59 @@ on:
         - 'GDEMU (SD Card)'
 
 jobs:
-  build-dca3:
-    runs-on: ubuntu-latest
+  build-windows:
+    runs-on: windows-latest
+    
+    # We use MSYS2 to replicate the "DreamSDK Shell" environment
+    defaults:
+      run:
+        shell: msys2 {0}
 
     steps:
-      - name: 🚀 Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake git wget p7zip-full \
-            genisoimage binutils-multiarch libpng-dev zlib1g-dev \
-            ffmpeg python3 jq
+      - name: 🚀 Setup DreamSDK Environment (MSYS2)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            p7zip
+            wget
+            unzip
+            jq
 
-      - name: 🛠️ Install Dreamcast Tools (cdi4dc, scramble, makeip)
+      - name: 🛠️ Install Dreamcast Tools (Windows)
         run: |
-          # 1. Compile cdi4dc (ISO to CDI converter)
-          git clone --recursive https://github.com/kazade/img4dc.git
-          cd img4dc
-          mkdir build && cd build
-          cmake .. -Wno-dev
-          make
-          sudo cp cdi4dc/cdi4dc /usr/local/bin/
-          cd ../..
+          # 1. Create the KOS_BASE structure the Makefile demands
+          # The official makefile looks for tools in $(KOS_BASE)/utils/...
+          mkdir -p dreamsdk/utils/makeip
+          mkdir -p dreamsdk/utils/scramble
           
-          # 2. Compile Scramble (Required for bootable binaries)
-          wget -q https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/scramble/scramble.c
-          gcc scramble.c -o scramble
-          sudo cp scramble /usr/local/bin/
-          
-          # 3. Compile makeip (Required to fix 'Error 127')
-          # The official Makefile looks for $(KOS_BASE)/utils/makeip/makeip
-          # We create this structure locally.
-          mkdir -p kos_dummy/utils/makeip
+          # 2. Compile 'makeip' (Generates IP.BIN boot sector)
+          echo "Compiling makeip..."
           wget -q https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/makeip/makeip.c
-          gcc makeip.c -o kos_dummy/utils/makeip/makeip
+          gcc makeip.c -o dreamsdk/utils/makeip/makeip.exe
+          
+          # 3. Compile 'scramble' (Makes binary bootable)
+          echo "Compiling scramble..."
+          wget -q https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/scramble/scramble.c
+          gcc scramble.c -o dreamsdk/utils/scramble/scramble.exe
+          
+          # 4. Compile 'cdi4dc' (Creates Disc Image)
+          echo "Compiling cdi4dc..."
+          git clone --recursive https://github.com/kazade/img4dc.git
+          cd img4dc/cdi4dc
+          cmake -G "MSYS Makefiles" .
+          make
+          # Copy to a path in system PATH
+          cp cdi4dc.exe /usr/bin/
+          
+          echo "✅ DreamSDK Tools Installed"
 
-      - name: 📥 Clone DCA3 Repo (Beta Branch)
+      - name: 📥 Clone DCA3 Repo (Beta)
         run: |
           git clone --branch beta https://gitlab.com/skmp/dca3-game.git
 
@@ -63,66 +81,71 @@ jobs:
         run: |
           cd dca3-game/liberty
           
-          echo "🔍 Fetching latest Beta ELF from GitLab Releases..."
+          echo "🔍 Fetching latest Beta ELF from GitLab..."
+          # Windows specific: Use curl to get the dynamic link to avoid 404s
           ASSET_URL=$(curl -s "https://gitlab.com/api/v4/projects/skmp%2Fdca3-game/releases/beta" | \
             jq -r '.assets.links[] | select(.name | contains("liberty") and contains("elf")) | .url')
           
           if [ -z "$ASSET_URL" ] || [ "$ASSET_URL" == "null" ]; then
-            echo "❌ Error: Could not find ELF link in GitLab Release."
+            echo "❌ Error: Could not find ELF link."
             exit 1
           fi
           
           wget -O dca-liberty.elf "$ASSET_URL"
-          echo "✅ ELF Downloaded."
+          echo "✅ ELF Downloaded"
 
       - name: 🎮 Install User Game Assets
         run: |
+          # Download
           wget -O assets.archive "${{ inputs.game_link }}"
+          
+          # Extract
           mkdir temp_extract
           7z x assets.archive -otemp_extract -y
           
-          # Find the actual game folder
+          # Find Game Root (gta3.exe or models folder)
           GAME_ROOT=$(find temp_extract -name "gta3.exe" -printf "%h\n" | head -n 1)
           if [ -z "$GAME_ROOT" ]; then
              GAME_ROOT=$(find temp_extract -type d -name "models" -printf "%h\n" | head -n 1)
           fi
           
           if [ -z "$GAME_ROOT" ]; then
-             echo "❌ Error: Could not find GTA3 files in your link."
+             echo "❌ Error: Could not find GTA3 files."
              exit 1
           fi
           
-          echo "📂 Copying game assets to dca3-game/liberty..."
+          echo "📂 Copying assets..."
           cp -r "$GAME_ROOT"/* dca3-game/liberty/
 
-      - name: 💿 Build CDI (Make cdi-prebuilt)
+      - name: 💿 Build CDI (Official Method)
         run: |
           cd dca3-game/liberty
           
-          # Configuration for Make
+          # Setup Environment Variables for the Makefile
+          # We point KOS_BASE to our fake directory created in step 1
+          export KOS_BASE=$(pwd)/../../dreamsdk
+          
+          # Set Target Type
           if [ "${{ inputs.target_type }}" == "CD-R (Burn)" ]; then
             export FOR_DISC=1
-            echo "🔥 Configuration: CD-R (700MB/80min)"
+            echo "🔥 Configuration: CD-R (Burn)"
           else
             export FOR_DISC=0
-            echo "💾 Configuration: GDEMU (High Quality Audio)"
+            echo "💾 Configuration: GDEMU"
           fi
           
-          # Link Makefile if missing in subdir
+          # Ensure Makefile is present (Link if needed)
           if [ ! -f "Makefile" ]; then
              ln -s ../Makefile Makefile
              ln -s ../scripts scripts
           fi
           
-          # Point KOS_BASE to our dummy folder so it finds /utils/makeip/makeip
-          # The path must be absolute for Make
-          export KOS_BASE=$GITHUB_WORKSPACE/kos_dummy
-          
+          # Run Make (The official guide says run it twice if it fails)
           echo "🔨 Running Make (Attempt 1)..."
-          make cdi-prebuilt KOS_BASE=$KOS_BASE || true
+          make cdi-prebuilt || true
           
           echo "🔨 Running Make (Attempt 2)..."
-          make cdi-prebuilt KOS_BASE=$KOS_BASE
+          make cdi-prebuilt
 
       - name: 📤 Upload Artifact
         uses: actions/upload-artifact@v4
