@@ -1,39 +1,137 @@
-name: Compile DCA3 (GTA 3 Dreamcast) CDI
+name: Compile DCA3 (Official Guide Method)
 
 on:
   workflow_dispatch:
     inputs:
       game_link:
-        description: 'Direct Link to GTA 3 PC Files (.zip or .7z)'
+        description: 'Direct Link to GTA 3 PC Files (.zip, .7z, .rar)'
         required: true
-        default: ''
+      target_type:
+        description: 'Target Media'
+        required: true
+        default: 'CD-R (Burn)'
+        type: choice
+        options:
+        - 'CD-R (Burn)'
+        - 'GDEMU (SD Card)'
 
 jobs:
-  build-dreamcast-cdi:
+  build-dca3:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🚀 Install Dependencies
+      - name: 🚀 Install System Dependencies
         run: |
           sudo apt-get update
-          # binutils-multiarch is CRITICAL for objcopy (ELF -> BIN conversion)
-          sudo apt-get install -y genisoimage p7zip-full wget make cmake build-essential git binutils-multiarch zlib1g-dev libpng-dev
-          
-      - name: 🛠️ Build cdi4dc (Corrected)
+          # Essentials for building the tools and running the scripts
+          sudo apt-get install -y build-essential cmake git wget p7zip-full \
+            genisoimage binutils-multiarch libpng-dev zlib1g-dev \
+            ffmpeg python3 jq
+
+      - name: 🛠️ Install Dreamcast Tools (cdi4dc & scramble)
         run: |
-          # Clone recursively
+          # 1. Compile cdi4dc (with submodule fix)
           git clone --recursive https://github.com/kazade/img4dc.git
-          
-          # CRITICAL FIX: Build from the ROOT folder, not the subdir
           cd img4dc
           mkdir build && cd build
-          cmake ..
+          cmake .. -Wno-dev
           make
+          sudo cp cdi4dc/cdi4dc /usr/local/bin/
+          cd ../..
           
-          # Manually install the binary (Standard CMake install might be missing in this repo)
-          echo "Installing cdi4dc to /usr/local/bin..."
-          sudo cp cdi4dc/cdi4dc /usr/local/bin/cdi4dc
-          sudo chmod +x /usr/local/bin/cdi4dc
+          # 2. Compile Scramble (Required for bootable binaries)
+          wget -q https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/scramble/scramble.c
+          gcc scramble.c -o scramble
+          sudo cp scramble /usr/local/bin/
+
+      - name: 📥 Clone DCA3 Repo (Beta Branch)
+        run: |
+          # Following Official Guide: Clone beta branch
+          git clone --branch beta https://gitlab.com/skmp/dca3-game.git
+
+      - name: 📁 Prepare Liberty Folder
+        run: |
+          # Following Official Guide: Create folder inside repo
+          cd dca3-game
+          mkdir -p liberty
+
+      - name: ⬇️ Download Official Beta ELF
+        run: |
+          cd dca3-game/liberty
+          
+          echo "🔍 Fetching latest Beta ELF from GitLab Releases..."
+          # Use API to get the permanent link for "dca-liberty.elf" from the "beta" tag
+          ASSET_URL=$(curl -s "https://gitlab.com/api/v4/projects/skmp%2Fdca3-game/releases/beta" | \
+            jq -r '.assets.links[] | select(.name | contains("liberty") and contains("elf")) | .url')
+          
+          if [ -z "$ASSET_URL" ] || [ "$ASSET_URL" == "null" ]; then
+            echo "❌ Error: Could not find ELF link in GitLab Release."
+            exit 1
+          fi
+          
+          wget -O dca-liberty.elf "$ASSET_URL"
+          echo "✅ ELF Downloaded."
+
+      - name: 🎮 Install User Game Assets
+        run: |
+          # Download user assets
+          wget -O assets.archive "${{ inputs.game_link }}"
+          mkdir temp_extract
+          7z x assets.archive -otemp_extract -y
+          
+          # Find the actual game folder (handles nested zips)
+          GAME_ROOT=$(find temp_extract -name "gta3.exe" -printf "%h\n" | head -n 1)
+          if [ -z "$GAME_ROOT" ]; then
+             GAME_ROOT=$(find temp_extract -type d -name "models" -printf "%h\n" | head -n 1)
+          fi
+          
+          if [ -z "$GAME_ROOT" ]; then
+             echo "❌ Error: Could not find GTA3 files in your link."
+             exit 1
+          fi
+          
+          echo "📂 Copying game assets to dca3-game/liberty..."
+          cp -r "$GAME_ROOT"/* dca3-game/liberty/
+
+      - name: 💿 Build CDI (Make cdi-prebuilt)
+        run: |
+          cd dca3-game/liberty
+          
+          # Setup variables based on user input
+          if [ "${{ inputs.target_type }}" == "CD-R (Burn)" ]; then
+            export FOR_DISC=1
+            echo "🔥 Configuration: CD-R (700MB/80min)"
+          else
+            export FOR_DISC=0
+            echo "💾 Configuration: GDEMU (High Quality Audio)"
+          fi
+          
+          # Check if Makefile exists in liberty, if not look in root
+          if [ ! -f "Makefile" ]; then
+             echo "⚠️ No Makefile in liberty folder, assuming root Makefile..."
+             TARGET_MAKEFILE="-f ../Makefile"
+             # The root makefile likely expects to be run from root or needs path adjustments
+             # However, the guide explicitly says 'cd liberty' then 'make'. 
+             # We will try linking the root Makefile here if missing.
+             ln -s ../Makefile Makefile
+             ln -s ../scripts scripts
+          fi
+          
+          echo "🔨 Running Make (Attempt 1)..."
+          # The guide says it fails the first time. We allow failure.
+          make cdi-prebuilt || true
+          
+          echo "🔨 Running Make (Attempt 2 - To Completion)..."
+          make cdi-prebuilt
+
+      - name: 📤 Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GTA3-Dreamcast-CDI
+          path: dca3-game/liberty/*.cdi
+          compression-level: 0
+
+
           
       - name: ⬇️ Download Latest DCA3 Executable (ELF)
         run: |
