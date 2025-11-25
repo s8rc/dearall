@@ -1,0 +1,82 @@
+name: 🪟 WINDOWS VPN EXIT NODE
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: '🕐 Duration'
+        required: true
+        default: '6h'
+        type: choice
+        options:
+        - '1h'
+        - '3h' 
+        - '6h'
+
+jobs:
+  Windows-Exit-Node:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    
+    steps:
+      - name: ⚙️ Configure Windows Routing
+        run: |
+          Write-Host "🚀 ENABLING IP FORWARDING..." -ForegroundColor Cyan
+          
+          # 1. Enable IP Routing in Registry (Required for Windows Exit Nodes)
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" -Name "IPEnableRouter" -Value 1
+          
+          # 2. Restart Remote Access Service to apply changes
+          Restart-Service RemoteAccess -ErrorAction SilentlyContinue
+          Write-Host "✅ Routing Enabled!" -ForegroundColor Green
+
+      - name: 📥 Install & Connect Tailscale
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          Write-Host "📥 INSTALLING TAILSCALE..." -ForegroundColor Cyan
+          
+          # Download and Install Tailscale
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+          $output = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$output`"", "/quiet", "/norestart" -Wait
+          
+          # Wait for service to start
+          Start-Sleep -Seconds 5
+          
+          Write-Host "🔌 CONNECTING..." -ForegroundColor Cyan
+          
+          # Connect with the Tag (This triggers the Auto-Approval from Part 1)
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_AUTH_KEY --hostname="win-exit-node-$env:GITHUB_RUN_ID" --advertise-exit-node --unattended
+          
+          Write-Host "✅ CONNECTED & AUTO-APPROVED!" -ForegroundColor Green
+
+      - name: ⏳ Keep Session Alive
+        run: |
+          $duration = "${{ inputs.duration }}"
+          switch ($duration) {
+              "1h" { $minutes = 60 }
+              "3h" { $minutes = 180 }
+              "6h" { $minutes = 350 } # Slight buffer under 6h limit
+          }
+          
+          $endTime = (Get-Date).AddMinutes($minutes)
+          
+          Write-Host "┌───────────────────────────────────────────┐" -ForegroundColor Yellow
+          Write-Host "│      🪟 WINDOWS EXIT NODE ACTIVE          │" -ForegroundColor Yellow
+          Write-Host "├───────────────────────────────────────────┤" -ForegroundColor Yellow
+          Write-Host "│ 1. Open Tailscale on your device          │" -ForegroundColor White
+          Write-Host "│ 2. Select 'Exit Node'                     │" -ForegroundColor White
+          Write-Host "│ 3. Choose: win-exit-node-...              │" -ForegroundColor White
+          Write-Host "└───────────────────────────────────────────┘" -ForegroundColor Yellow
+          
+          # Keep-alive loop
+          while ((Get-Date) -lt $endTime) {
+              $remaining = $endTime - (Get-Date)
+              Write-Host "`r⏳ Active... Remaining: $($remaining.ToString('hh\:mm\:ss'))" -NoNewline -ForegroundColor Cyan
+              Start-Sleep -Seconds 5
+          }
+          
+          Write-Host "`n🛑 Time is up. Shutting down." -ForegroundColor Red
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" logout
