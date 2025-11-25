@@ -1,4 +1,4 @@
-name: Compile DCA3 (Windows DreamSDK)
+name: Compile DCA3 (Fixed KOS Path)
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
         shell: msys2 {0}
 
     steps:
-      - name: 🚀 Setup DreamSDK Environment (MSYS2)
+      - name: 🚀 Setup DreamSDK Shell (MSYS2)
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -40,40 +40,48 @@ jobs:
             unzip
             jq
 
-      - name: 🛠️ Install Dreamcast Tools (Windows)
+      - name: 🛠️ Construct DreamSDK Tools
         run: |
-          # 1. Create the KOS_BASE structure
-          mkdir -p dreamsdk/utils/makeip
-          mkdir -p dreamsdk/utils/scramble
+          # 1. Clone KallistiOS to a fixed folder named 'dreamsdk'
+          # We use this folder as our "KOS_BASE"
+          echo "Cloning KOS..."
+          git clone --depth 1 https://github.com/KallistiOS/KallistiOS.git dreamsdk
           
-          # 2. Clone KallistiOS (Depth 1 to save time) to get the tools source
-          echo "Cloning KallistiOS utils..."
-          git clone --depth 1 https://github.com/KallistiOS/KallistiOS.git temp_kos
-          
-          # 3. Compile 'makeip'
+          # 2. Compile makeip (In-Place)
+          # We go TO the file, compile it, and leave it there.
           echo "Compiling makeip..."
-          # Copy source to where we need it or just compile from temp
-          cp temp_kos/utils/makeip/makeip.c .
-          gcc makeip.c -o dreamsdk/utils/makeip/makeip.exe -static -lpng -lz
+          cd dreamsdk/utils/makeip
+          gcc makeip.c -o makeip.exe -static -lpng -lz
           
-          # 4. Compile 'scramble'
+          # Verify it exists
+          if [ ! -f "makeip.exe" ]; then
+            echo "❌ CRITICAL: makeip.exe failed to compile."
+            exit 1
+          fi
+          cd ../../..
+
+          # 3. Compile scramble (In-Place)
           echo "Compiling scramble..."
-          cp temp_kos/utils/scramble/scramble.c .
-          gcc scramble.c -o dreamsdk/utils/scramble/scramble.exe -static
+          cd dreamsdk/utils/scramble
+          gcc scramble.c -o scramble.exe -static
           
-          # 5. Compile 'cdi4dc'
+          # Verify it exists
+          if [ ! -f "scramble.exe" ]; then
+            echo "❌ CRITICAL: scramble.exe failed to compile."
+            exit 1
+          fi
+          cd ../../..
+          
+          # 4. Compile cdi4dc (Disc Image Tool)
           echo "Compiling cdi4dc..."
           git clone --recursive https://github.com/kazade/img4dc.git
           cd img4dc/cdi4dc
           cmake -G "MSYS Makefiles" .
           make
+          # Install to global path so we can call 'cdi4dc' from anywhere
           cp cdi4dc.exe /usr/bin/
           
-          # Clean up temp sources
-          cd ../..
-          rm -rf temp_kos img4dc makeip.c scramble.c
-          
-          echo "✅ DreamSDK Tools Installed"
+          echo "✅ DreamSDK Environment Ready"
 
       - name: 📥 Clone DCA3 Repo (Beta)
         run: |
@@ -102,14 +110,10 @@ jobs:
 
       - name: 🎮 Install User Game Assets
         run: |
-          # Download
           curl -L -o assets.archive "${{ inputs.game_link }}"
-          
-          # Extract
           mkdir temp_extract
           7z x assets.archive -otemp_extract -y
           
-          # Find Game Root
           GAME_ROOT=$(find temp_extract -name "gta3.exe" -printf "%h\n" | head -n 1)
           if [ -z "$GAME_ROOT" ]; then
              GAME_ROOT=$(find temp_extract -type d -name "models" -printf "%h\n" | head -n 1)
@@ -123,33 +127,35 @@ jobs:
           echo "📂 Copying assets..."
           cp -r "$GAME_ROOT"/* dca3-game/liberty/
 
-      - name: 💿 Build CDI (Official Method)
+      - name: 💿 Build CDI
         run: |
+          # Define Absolute Path to our Fake DreamSDK (KallistiOS)
+          # This variable tells the Makefile where to find 'utils/makeip/makeip'
+          export KOS_BASE=$(pwd)/dreamsdk
+          
+          echo "Environment KOS_BASE set to: $KOS_BASE"
+          
           cd dca3-game/liberty
           
-          # Setup Environment Variables for the Makefile
-          export KOS_BASE=$(pwd)/../../dreamsdk
-          
+          # Configure Target
           if [ "${{ inputs.target_type }}" == "CD-R (Burn)" ]; then
             export FOR_DISC=1
-            echo "🔥 Configuration: CD-R (Burn)"
           else
             export FOR_DISC=0
-            echo "💾 Configuration: GDEMU"
           fi
           
-          # Ensure Makefile is present
+          # Link Makefile if missing
           if [ ! -f "Makefile" ]; then
              ln -s ../Makefile Makefile
              ln -s ../scripts scripts
           fi
           
-          # Run Make
           echo "🔨 Running Make (Attempt 1)..."
-          make cdi-prebuilt || true
+          # We pass KOS_BASE explicitly to the make command just in case
+          make cdi-prebuilt KOS_BASE="$KOS_BASE" || true
           
           echo "🔨 Running Make (Attempt 2)..."
-          make cdi-prebuilt
+          make cdi-prebuilt KOS_BASE="$KOS_BASE"
 
       - name: 📤 Upload Artifact
         uses: actions/upload-artifact@v4
@@ -157,5 +163,7 @@ jobs:
           name: GTA3-Dreamcast-CDI
           path: dca3-game/liberty/*.cdi
           compression-level: 0
+
+
 
 
