@@ -19,7 +19,6 @@ jobs:
   build-windows:
     runs-on: windows-latest
     
-    # We use MSYS2 to replicate the "DreamSDK Shell" environment
     defaults:
       run:
         shell: msys2 {0}
@@ -35,35 +34,34 @@ jobs:
             make
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-libpng
             p7zip
-            wget
+            curl
             unzip
             jq
 
       - name: 🛠️ Install Dreamcast Tools (Windows)
         run: |
-          # 1. Create the KOS_BASE structure the Makefile demands
-          # The official makefile looks for tools in $(KOS_BASE)/utils/...
+          # 1. Create the KOS_BASE structure
           mkdir -p dreamsdk/utils/makeip
           mkdir -p dreamsdk/utils/scramble
           
-          # 2. Compile 'makeip' (Generates IP.BIN boot sector)
+          # 2. Compile 'makeip' (Fixed: Added libpng libs and curl)
           echo "Compiling makeip..."
-          wget -q https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/makeip/makeip.c
-          gcc makeip.c -o dreamsdk/utils/makeip/makeip.exe
+          curl -L -o makeip.c https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/makeip/makeip.c
+          gcc makeip.c -o dreamsdk/utils/makeip/makeip.exe -static -lpng -lz
           
-          # 3. Compile 'scramble' (Makes binary bootable)
+          # 3. Compile 'scramble'
           echo "Compiling scramble..."
-          wget -q https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/scramble/scramble.c
-          gcc scramble.c -o dreamsdk/utils/scramble/scramble.exe
+          curl -L -o scramble.c https://raw.githubusercontent.com/KallistiOS/KallistiOS/master/utils/scramble/scramble.c
+          gcc scramble.c -o dreamsdk/utils/scramble/scramble.exe -static
           
-          # 4. Compile 'cdi4dc' (Creates Disc Image)
+          # 4. Compile 'cdi4dc'
           echo "Compiling cdi4dc..."
           git clone --recursive https://github.com/kazade/img4dc.git
           cd img4dc/cdi4dc
           cmake -G "MSYS Makefiles" .
           make
-          # Copy to a path in system PATH
           cp cdi4dc.exe /usr/bin/
           
           echo "✅ DreamSDK Tools Installed"
@@ -81,8 +79,7 @@ jobs:
         run: |
           cd dca3-game/liberty
           
-          echo "🔍 Fetching latest Beta ELF from GitLab..."
-          # Windows specific: Use curl to get the dynamic link to avoid 404s
+          echo "🔍 Fetching latest Beta ELF..."
           ASSET_URL=$(curl -s "https://gitlab.com/api/v4/projects/skmp%2Fdca3-game/releases/beta" | \
             jq -r '.assets.links[] | select(.name | contains("liberty") and contains("elf")) | .url')
           
@@ -91,19 +88,19 @@ jobs:
             exit 1
           fi
           
-          wget -O dca-liberty.elf "$ASSET_URL"
+          curl -L -o dca-liberty.elf "$ASSET_URL"
           echo "✅ ELF Downloaded"
 
       - name: 🎮 Install User Game Assets
         run: |
           # Download
-          wget -O assets.archive "${{ inputs.game_link }}"
+          curl -L -o assets.archive "${{ inputs.game_link }}"
           
           # Extract
           mkdir temp_extract
           7z x assets.archive -otemp_extract -y
           
-          # Find Game Root (gta3.exe or models folder)
+          # Find Game Root
           GAME_ROOT=$(find temp_extract -name "gta3.exe" -printf "%h\n" | head -n 1)
           if [ -z "$GAME_ROOT" ]; then
              GAME_ROOT=$(find temp_extract -type d -name "models" -printf "%h\n" | head -n 1)
@@ -122,10 +119,8 @@ jobs:
           cd dca3-game/liberty
           
           # Setup Environment Variables for the Makefile
-          # We point KOS_BASE to our fake directory created in step 1
           export KOS_BASE=$(pwd)/../../dreamsdk
           
-          # Set Target Type
           if [ "${{ inputs.target_type }}" == "CD-R (Burn)" ]; then
             export FOR_DISC=1
             echo "🔥 Configuration: CD-R (Burn)"
@@ -134,13 +129,13 @@ jobs:
             echo "💾 Configuration: GDEMU"
           fi
           
-          # Ensure Makefile is present (Link if needed)
+          # Ensure Makefile is present
           if [ ! -f "Makefile" ]; then
              ln -s ../Makefile Makefile
              ln -s ../scripts scripts
           fi
           
-          # Run Make (The official guide says run it twice if it fails)
+          # Run Make
           echo "🔨 Running Make (Attempt 1)..."
           make cdi-prebuilt || true
           
@@ -153,5 +148,3 @@ jobs:
           name: GTA3-Dreamcast-CDI
           path: dca3-game/liberty/*.cdi
           compression-level: 0
-
-
